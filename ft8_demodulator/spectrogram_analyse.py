@@ -55,8 +55,8 @@ def calculate_spectrogram(wave_data: np.ndarray, sample_rate: int, bins_per_tone
     
     # 转换为dB单位
     with np.errstate(divide='ignore'):
-        spectrogram = 10*np.log10(np.abs(spectrogram))
-    
+        spectrogram = 10*np.log10(1E-12 + np.abs(spectrogram))
+
     # 将频率轴重新排序，使其从负频率到正频率
     spectrogram = np.fft.fftshift(spectrogram, axes=0)
     f = np.fft.fftshift(f)

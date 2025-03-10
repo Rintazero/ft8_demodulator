@@ -113,7 +113,7 @@ def test_decode_ft8_message():
         bins_per_tone=2,
         steps_per_symbol=2,
         max_candidates=20,
-        min_score=5,
+        min_score=10,
         max_iterations=20
     )
     

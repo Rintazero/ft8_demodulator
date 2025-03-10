@@ -26,17 +26,13 @@ class FT8Waterfall:
     @property
     def num_bins(self) -> int:
         """频率bin数 (对于FT8通常是8)"""
-        return 8  # FT8使用8-FSK调制
+        return self.mag.shape[0]  # FT8使用8-FSK调制
     
     @property
     def num_blocks(self) -> int:
         """时间块数"""
         return self.mag.shape[1] // self.time_osr
     
-    @property
-    def block_stride(self) -> int:
-        """块步长"""
-        return self.num_bins * self.freq_osr
 
 @dataclass
 class FT8Candidate:

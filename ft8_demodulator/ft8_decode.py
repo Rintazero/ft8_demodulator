@@ -23,6 +23,9 @@ from ft8_demodulator.ftx_types import (
     FT8DecodeStatus
 )
 
+# 导入LDPC解码器
+from ft8_demodulator.ldpc_decoder import bp_decode
+
 # FT8常量
 FT8_ND = 58  # 数据符号数
 FT8_NUM_SYNC = 3  # 同步序列数
@@ -33,75 +36,79 @@ FT8_LDPC_K = 91  # LDPC信息位长度
 FT8_LDPC_K_BYTES = 12  # LDPC信息位字节数
 
 # 编码映射表
-FT8_Gray_map = [0, 1, 3, 2, 6, 7, 5, 4]
+FT8_Gray_map = [0, 1, 3, 2, 5, 6, 4, 7]  # 正确的Gray码映射表
 
 # FT8 Costas同步序列
 FT8_Costas_pattern = [3, 1, 4, 0, 6, 5, 2]
 
-def db_power_sum(x: float) -> float:
-    """
-    计算功率和的公式: y = 10*log10(1 + 10^(x/10))
+
+
+
+def ft8_sync_score(wf: FT8Waterfall, candidate: FT8Candidate) -> float:
+    """计算FT8同步分数
     
     Args:
-        x: 较弱信号的相对强度(dB)
+        wf: FT8瀑布图数据
+        candidate: 待评估的候选信号
     
     Returns:
-        信号电平增加值(dB)
+        float: 归一化的同步分数，分数越高表示同步性越好
     """
-    return 10 * math.log10(1 + 10 ** (x / 10))
-
-
-def ft8_sync_score(wf: FT8Waterfall, candidate: FT8Candidate) -> int:
-    """计算FT8同步分数"""
     score = 0.0
-    num_average = 0
-
+    num_comparisons = 0
     time_offset_base = candidate.abs_time // wf.time_osr
-    # 计算同步符号的平均分数 (m+k = 0-7, 36-43, 72-79)
+    
+    # 遍历3个Costas同步序列
     for m in range(FT8_NUM_SYNC):
+        sequence_start = m * FT8_SYNC_OFFSET
+        
+        # 遍历每个同步序列中的符号
         for k in range(FT8_LENGTH_SYNC):
-            block = (FT8_SYNC_OFFSET * m) + k          # 相对于消息
-            block_abs = time_offset_base + block       # 相对于捕获的信号
+            block = sequence_start + k
+            block_abs = time_offset_base + block
             
             # 检查时间边界
-            if block_abs < 0:
+            if block_abs < 0 or block_abs >= wf.num_blocks:
                 continue
-            if block_abs >= wf.num_blocks:
-                break
-
-            sm = FT8_Costas_pattern[k]  # 预期bin的索引
             
-            if sm > 0:
-                # 查看低一个频率bin
-                score += candidate.get_log_power(block, sm) - candidate.get_log_power(block, sm - 1)
-                num_average += 1
-            if sm < 7:
-                # 查看高一个频率bin
-                score += candidate.get_log_power(block, sm) - candidate.get_log_power(block, sm + 1)
-                num_average += 1
-            if (k > 0) and (block_abs > 0):
-                # 查看时间上前一个符号
-                score += candidate.get_log_power(block, sm) - candidate.get_log_power(block - 1, sm)
-                num_average += 1
-            if ((k + 1) < FT8_LENGTH_SYNC) and ((block_abs + 1) < wf.num_blocks):
-                # 查看时间上后一个符号
-                score += candidate.get_log_power(block, sm) - candidate.get_log_power(block + 1, sm)
-                num_average += 1
-
-    if num_average > 0:
-        score /= num_average
-
-    return score
+            # 从Costas模式获取预期的音调索引
+            tone_idx = FT8_Costas_pattern[k]
+            current_power = candidate.get_log_power(block, tone_idx)
+            
+            # 与相邻频率bin比较
+            if tone_idx > 0:
+                score += current_power - candidate.get_log_power(block, tone_idx - 1)
+                num_comparisons += 1
+            
+            if tone_idx < 7:
+                score += current_power - candidate.get_log_power(block, tone_idx + 1)
+                num_comparisons += 1
+            
+            # 与相邻时间bin比较
+            if k > 0 and block_abs > 0:
+                score += current_power - candidate.get_log_power(block - 1, tone_idx)
+                num_comparisons += 1
+            
+            if k < FT8_LENGTH_SYNC - 1 and block_abs + 1 < wf.num_blocks:
+                score += current_power - candidate.get_log_power(block + 1, tone_idx)
+                num_comparisons += 1
+    
+    # 如果没有有效比较或分数无效，返回负无穷
+    if num_comparisons == 0 or np.isnan(score) or np.isinf(score):
+        return float('-inf')
+        
+    return score / num_comparisons
 
 def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -> List[FT8Candidate]:
     """查找候选信号"""
     candidates = []
     num_tones = 8  # FT8使用8-FSK调制
     
-    # 计算所有可能的时间和频率位置
+    # 修正搜索范围计算，确保不会越界
     time_range = range(-10 * wf.time_osr, 20 * wf.time_osr)
-    freq_range = range(0, (wf.num_bins - num_tones + 1) * wf.freq_osr)
+    freq_range = range(0, wf.mag.shape[0] - (num_tones - 1) * wf.freq_osr)
     
+    score_list = []
     for abs_time in time_range:
         for abs_freq in freq_range:
             # 创建候选对象
@@ -113,21 +120,29 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
             
             # 计算分数
             score = ft8_sync_score(wf, candidate)
-            candidate.score = score
             
-            if score < min_score:
+            # 只处理有效的分数
+            if score == float('-inf') or score < min_score:
                 continue
                 
-            # 如果还没有收集足够的候选，或者当前候选比堆中最差的更好
+            candidate.score = score
+            score_list.append(score)
+            
+            # 使用最小堆维护最高分的候选
             if len(candidates) < num_candidates:
-                # 将分数取负值，因为heapq是最小堆
                 heapq.heappush(candidates, (-score, candidate))
-            elif -score < candidates[0][0]:  # 比较负分数，实际上是比较正分数的大小
-                # 替换堆中最差的候选
+            elif -score < candidates[0][0]:
                 heapq.heapreplace(candidates, (-score, candidate))
     
     # 提取候选并按分数降序排序
     result = [item[1] for item in sorted(candidates, key=lambda x: x[0])]
+    
+    print(f"找到的候选信号数量: {len(candidates)}")
+    print(f"候选信号: {candidates}")
+    if score_list:
+        print(f"Score statistics:")
+        print(f"  Max score: {max(score_list):.2f}")
+        print(f"  Min score: {min(score_list):.2f}")
     
     return result
 
@@ -205,13 +220,6 @@ def ftx_extract_crc(data: bytearray) -> int:
     """从数据中提取CRC"""
     return extract_crc(data)
 
-def bp_decode(log174: np.ndarray, max_iterations: int, plain174: np.ndarray, ldpc_errors: List[int]) -> None:
-    """LDPC信念传播解码"""
-    # 这里需要实现LDPC解码
-    # 暂时用随机值填充plain174
-    plain174[:] = np.random.randint(0, 2, size=len(plain174))
-    ldpc_errors[0] = 0
-
 def ft8_decode_candidate(wf: FT8Waterfall, cand: FT8Candidate, max_iterations: int) -> Tuple[bool, FT8Message, FT8DecodeStatus]:
     """解码候选信号"""
     message = FT8Message()
@@ -222,30 +230,40 @@ def ft8_decode_candidate(wf: FT8Waterfall, cand: FT8Candidate, max_iterations: i
 
     ftx_normalize_logl(log174)
 
-    plain174 = np.zeros(FT8_LDPC_N, dtype=np.uint8)  # 消息位(0/1)
-    ldpc_errors = [0]
-    bp_decode(log174, max_iterations, plain174, ldpc_errors)
-    status.ldpc_errors = ldpc_errors[0]
+    # 使用LDPC解码器
+    plain174, ldpc_errors = bp_decode(log174, max_iterations)
+    status.ldpc_errors = ldpc_errors
 
     if status.ldpc_errors > 0:
         return False, message, status
 
     # 提取有效载荷 + CRC (前FTX_LDPC_K位)打包到字节数组中
     a91 = pack_bits(plain174, FT8_LDPC_K)
-
+    
     # 提取CRC并检查它
-    status.crc_extracted = ftx_extract_crc(a91)
-    # [1]: 'CRC是在源编码消息上计算的，从77位零扩展到82位。'
-    a91[9] &= 0xF8
-    a91[10] &= 0x00
-    status.crc_calculated = ftx_compute_crc(a91, 96 - 14)
+    status.crc_extracted = extract_crc(a91)
+    
+    # 创建用于CRC计算的临时缓冲区
+    crc_buffer = bytearray(12)  # 足够存储96位
+    # 复制原始数据
+    for i in range(10):  # 只复制前10个字节，包含77位消息
+        crc_buffer[i] = a91[i]
+    
+    # 清除载荷后的位，准备进行CRC计算
+    crc_buffer[9] &= 0xF8  # 保留前5位（77-72=5位）
+    crc_buffer[10] = 0     # 清零后续字节
+    crc_buffer[11] = 0
+    
+    # 计算前82位的CRC
+    status.crc_calculated = compute_crc(crc_buffer, 82)
 
     if status.crc_extracted != status.crc_calculated:
         return False, message, status
 
-    # 重用CRC值作为消息的哈希(TODO: 仅14位，也许应该使用完整的16或32位?)
+    # 重用CRC值作为消息的哈希
     message.hash = status.crc_calculated
 
+    # 复制payload（前77位消息）
     for i in range(10):
         message.payload[i] = a91[i]
 
@@ -274,6 +292,11 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
         wave_data, sample_rate, bins_per_tone, steps_per_symbol
     )
     
+    # 只取正频率部分
+    positive_freq_mask = f >= 0
+    spectrogram = spectrogram[positive_freq_mask]
+    f = f[positive_freq_mask]
+    
     # import matplotlib.pyplot as plt
     # # 绘制频谱图
     # plt.figure(figsize=(10, 6))
@@ -292,16 +315,14 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     
     # 查找候选信号
     candidates = ft8_find_candidates(wf, max_candidates, min_score)
-
-    print(f"找到的候选信号数量: {len(candidates)}")
-    print(f"候选信号: {candidates}")
+    
     # 解码候选信号
     results = []
     for cand in candidates:
         success, message, status = ft8_decode_candidate(wf, cand, max_iterations)
         if success:
             results.append((message, status))
-    
+    print(f"解码后的消息: {results}")
     return results 
 
 
