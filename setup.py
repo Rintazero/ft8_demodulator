@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="ft8_demodulator",
+    name="ft8_tools",
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
@@ -22,7 +22,7 @@ setup(
     },
     author="Peng",
     author_email="your.email@example.com",
-    description="FT8解调器 - 用于解码FT8数字模式信号",
+    description="FT8工具包 - 包含FT8信号的生成和解调功能",
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/ft8_demodulator",
