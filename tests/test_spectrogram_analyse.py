@@ -97,7 +97,7 @@ def test_decode_ft8_message():
     fs = 1000  # Sample rate
     f0 = 300    # Audio frequency
     fc = 0      # Carrier frequency (baseband signal)
-    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
+    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x58], dtype=np.uint8)
     
     # Generate test waveform data
     wave_data = ft8_generator.ft8_generator(

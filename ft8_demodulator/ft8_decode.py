@@ -266,6 +266,7 @@ def ft8_decode_candidate(wf: FT8Waterfall, cand: FT8Candidate, max_iterations: i
     # 复制payload（前77位消息）
     for i in range(10):
         message.payload[i] = a91[i]
+    message.payload[9] &= 0xf8
 
     return True, message, status
 
