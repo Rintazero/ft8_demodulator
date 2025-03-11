@@ -3,7 +3,7 @@ FT8解调器的数据类型定义
 """
 
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Tuple, Optional
 
@@ -49,7 +49,7 @@ class FT8Candidate:
 @dataclass
 class FT8Message:
     """解码后的消息数据结构"""
-    payload: bytearray = bytearray(10)
+    payload: bytearray = field(default_factory=lambda: bytearray(10))
     hash: int = 0
 
 @dataclass
