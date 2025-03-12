@@ -137,8 +137,8 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
     # 提取候选并按分数降序排序
     result = [item[1] for item in sorted(candidates, key=lambda x: x[0])]
     
-    print(f"找到的候选信号数量: {len(candidates)}")
-    print(f"候选信号: {candidates}")
+    print(f"Number of candidates found: {len(candidates)}")
+
     if score_list:
         print(f"Score statistics:")
         print(f"  Max score: {max(score_list):.2f}")
@@ -147,7 +147,7 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
     return result
 
 def ft8_extract_symbol(wf: np.ndarray, logl: np.ndarray) -> None:
-    """计算3个消息位(1个FSK符号)的非归一化对数似然log(p(1)/p(0))"""
+    """Calculate non-normalized log-likelihood log(p(1)/p(0)) for 3 message bits (1 FSK symbol)"""
     # 简化代码，用于n_syms==1的简单情况
     s2 = np.zeros(8)
 
@@ -323,7 +323,7 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
         success, message, status = ft8_decode_candidate(wf, cand, max_iterations)
         if success:
             results.append((message, status))
-    print(f"解码后的消息: {results}")
+    print(f"Decoded messages: {results}")
     return results 
 
 
