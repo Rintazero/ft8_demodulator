@@ -101,11 +101,6 @@ def test_frequency_correction():
     shift_carrier = np.exp(2j * np.pi * fShift_t0_Hz * t / fs + 
                           2j * np.pi * fShift_k_Hzpsample * t**2 / (2 * fs))
     
-    # 计算原始实信号的频谱图
-    print("Calculating original real signal spectrogram...")
-    real_spectrogram, f_real, t_real = calculate_spectrogram(wave_data, fs, 2, 2)
-    save_spectrogram(real_spectrogram, 'real_signal_spectrogram.png', 'Original Real Signal Spectrogram')
-
     # 直接生成复信号（基带信号）
     print("Directly generating FT8 baseband complex signal...")
     wave_complex = ft8_baseband_generator(test_payload, fs, f0)
@@ -113,10 +108,10 @@ def test_frequency_correction():
     # 将基带信号上变频到载波频率
     wave_complex = wave_complex * np.exp(1j * 2 * np.pi * fc * np.arange(len(wave_complex)) / fs)
 
-    # 计算基带信号的频谱图
-    print("Calculating baseband complex signal spectrogram...")
-    baseband_spectrogram, f_baseband, t_baseband = calculate_spectrogram(np.real(wave_complex), fs, 2, 2)
-    save_spectrogram(baseband_spectrogram, 'baseband_signal_spectrogram.png', 'Baseband Complex Signal Spectrogram')
+    # 计算复信号的频谱图
+    print("Calculating complex signal spectrogram...")
+    complex_spectrogram, f_complex, t_complex = calculate_spectrogram(wave_complex, fs, 2, 2)
+    save_spectrogram(complex_spectrogram, 'complex_signal_spectrogram.png', 'Complex Signal Spectrogram')
     
     # 应用频率漂移
     wave_shifted = wave_complex * shift_carrier
@@ -135,7 +130,7 @@ def test_frequency_correction():
 
     # 添加高斯噪声
     print("Adding Gaussian noise...")
-    SNR = -15  # 信噪比(dB)
+    SNR = -5  # 信噪比(dB)
     
     wave_power = np.mean(np.abs(wave_shifted)**2)
     noise_power = wave_power / (10**(SNR/10))

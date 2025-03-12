@@ -317,6 +317,37 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     # 查找候选信号
     candidates = ft8_find_candidates(wf, max_candidates, min_score)
     
+    # # Plot spectrogram and mark candidate signal positions
+    # import matplotlib.pyplot as plt
+    
+    # plt.figure(figsize=(12, 8))
+    
+    # # Plot spectrogram
+    # plt.imshow(spectrogram, aspect='auto', origin='lower', 
+    #            extent=[0, spectrogram.shape[1]/steps_per_symbol, 0, f[-1]],
+    #            cmap='viridis')
+    
+
+    
+    # plt.colorbar(label='Signal Strength (dB)')
+    # plt.title('FT8 Spectrogram with Candidate Signal Positions')
+    # plt.xlabel('Time (s)')
+    # plt.ylabel('Frequency (Hz)')
+
+    # plt.savefig('ft8_candidates_before.png', dpi=300, bbox_inches='tight')
+
+    # # Mark candidate signal positions
+    # for i, cand in enumerate(candidates):
+    #     # Calculate actual time and frequency
+    #     t_start = cand.abs_time / wf.time_osr  # 使用waterfall的time_osr进行时间转换
+    #     f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ  # 使用FT8符号频率间隔进行频率转换
+        
+    #     # 只添加红色十字标记
+    #     plt.plot(t_start, f_start, 'r+', markersize=8)
+
+    # plt.savefig('ft8_candidates.png', dpi=300, bbox_inches='tight')
+    # plt.close()
+
     # 解码候选信号
     results = []
     for cand in candidates:

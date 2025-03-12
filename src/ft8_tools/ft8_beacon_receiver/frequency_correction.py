@@ -202,10 +202,25 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     # 创建三个同步序列
     three_sync_correlation_seq = np.zeros((3*nsync_sym + ndata_sym - 1) * time_osr + 1 + samples_per_sym)
 
+
+
     for i in range(3):
         start_idx = i*(nsync_sym+ndata_sym//2)*time_osr
         end_idx = start_idx + len(sync_correlation_seq)
         three_sync_correlation_seq[start_idx:end_idx] = sync_correlation_seq
+
+
+        # 绘制three_sync_correlation_seq
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        plt.plot(three_sync_correlation_seq, marker='.', linestyle='-', color='b')
+        plt.title('Three Sync Correlation Sequence')
+        plt.xlabel('Sample Index')
+        plt.ylabel('Amplitude')
+        plt.grid(True)
+        plt.savefig('three_sync_correlation_seq.png')
+        plt.close()
+        
     # 相关计算
     sync_correlation = np.correlate(max_freqs, three_sync_correlation_seq, mode='full')
 
@@ -297,7 +312,7 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
 
         # 回归分析图
         plt.figure(figsize=(10, 6))
-        plt.scatter(regression_x, regression_y, color='blue', alpha=0.5, label='Original Data Points')
+        plt.scatter(regression_x, regression_y, color='blue', alpha=0.5, label='Sync Sequence Points')
         plt.plot(regression_x, model.predict(regression_x), color='red', label='Fitted Line')
         plt.title('Frequency Drift Regression Analysis')
         plt.xlabel('Time (s)')
