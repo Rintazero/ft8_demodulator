@@ -298,16 +298,16 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     spectrogram = spectrogram[positive_freq_mask]
     f = f[positive_freq_mask]
     
-    # import matplotlib.pyplot as plt
-    # # 绘制频谱图
-    # plt.figure(figsize=(10, 6))
-    # plt.imshow(spectrogram, aspect='auto', origin='lower')
-    # plt.colorbar(label='强度 (dB)')
-    # plt.title('FT8信号频谱图')
-    # plt.xlabel('时间 (秒)')
-    # plt.ylabel('频率 (Hz)')
-    # plt.savefig('ft8_spectrogram2222.png')
-    # plt.close()
+    import matplotlib.pyplot as plt
+    # 绘制频谱图
+    plt.figure(figsize=(10, 6))
+    plt.imshow(spectrogram, aspect='auto', origin='lower', extent=[0, t[-1], f[0], f[-1]])
+    plt.colorbar(label='Intensity (dB)')
+    plt.title('FT8 Signal Spectrogram')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Frequency (Hz)')
+    plt.savefig('ft8_spectrogram.png')
+    plt.close()
 
     # 创建瀑布数据结构
     wf = create_waterfall_from_spectrogram(

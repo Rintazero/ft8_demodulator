@@ -77,22 +77,25 @@ def verify_decode_results(results: list) -> None:
     assert isinstance(results, list), "Decode results should be a list"
     
     if results:
-        for message, status in results:
+        for message, status, time_sec, freq_hz, score in results:
             assert isinstance(message, FT8Message), "Decoded message should be FT8Message type"
             assert isinstance(status, FT8DecodeStatus), "Decode status should be FT8DecodeStatus type"
             assert len(message.payload) == 10, "FT8 message payload should be 10 bytes"
-            
+            print("--------------------------------")
+            print("Time:", time_sec, "seconds; Frequency:", freq_hz, "Hz; Score:", score)
             print("Decoded message:", message.payload.hex())
             print("CRC check:", status.crc_calculated)
             print("LDPC errors:", status.ldpc_errors)
+            
+
 
 def test_decode_ft8_message():
     """Test FT8 message decoding functionality"""
     # Set basic parameters
     fs = 1000  # Sample rate
-    f0 = 300    # Audio frequency
+    f0 = 300    # Audio frequency !!!!!This One!!!!!
     fc = 0      # Carrier frequency (baseband signal)
-    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
+    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8)
     
     # Generate test waveform data
     wave_data = ft8_generator(
@@ -119,7 +122,7 @@ def test_decode_with_noise():
     """Test decoding performance with noise"""
     # Set basic parameters
     fs = 12000  # Sample rate
-    f0 = 300    # Audio frequency
+    f0 = 500    # Audio frequency
     fc = 0      # Carrier frequency (baseband signal)
     test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
     
@@ -173,7 +176,7 @@ def test_decode_edge_cases():
     
     # Test high sample rate
     test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
-    wave_data = ft8_generator(test_payload, fs=fs, f0=300, fc=0)
+    wave_data = ft8_generator(test_payload, fs=fs, f0=200, fc=0)
     
     high_fs_results = decode_ft8_message(
         wave_data=wave_data,
