@@ -186,7 +186,7 @@ def test_decode_edge_cases():
 
 if __name__ == "__main__":
     print("Starting tests...")
-    test_calculate_spectrogram()
+    # test_calculate_spectrogram()
     test_decode_ft8_message()
 
 

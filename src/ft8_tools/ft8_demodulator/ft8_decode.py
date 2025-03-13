@@ -319,31 +319,53 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     
     # # Plot spectrogram and mark candidate signal positions
     # import matplotlib.pyplot as plt
+    # import numpy as np
     
     # plt.figure(figsize=(12, 8))
     
-    # # Plot spectrogram
-    # plt.imshow(spectrogram, aspect='auto', origin='lower', 
-    #            extent=[0, spectrogram.shape[1]/steps_per_symbol, 0, f[-1]],
+    # # 收集所有有效的时间点，包括负值
+    # all_time_points = []
+    # candidate_points = []
+    # for cand in candidates:
+    #     t_idx = cand.abs_time // wf.time_osr
+    #     if t_idx < len(t):  # 只检查上界
+    #         t_start = t[max(0, t_idx)]  # 使用t[0]作为最小值
+    #         if t_idx < 0:  # 如果是负时间，使用线性外推
+    #             t_start = t[0] + t_idx * (t[1] - t[0])  # 假设时间间隔均匀
+    #         f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
+    #         all_time_points.append(t_start)
+    #         candidate_points.append((t_start, f_start))
+    
+    # # 确定实际的时间范围
+    # min_time = min(min(all_time_points) if all_time_points else t[0], t[0])
+    # max_time = max(max(all_time_points) if all_time_points else t[-1], t[-1])
+    
+    # # 创建掩码数组，将t<0的部分设为透明
+    # mask = np.ones_like(spectrogram)
+    # time_points = np.linspace(min_time, max_time, spectrogram.shape[1])
+    # mask[:, time_points < 0] = np.nan
+    
+    # # Plot spectrogram with adjusted time range and mask
+    # plt.imshow(spectrogram * mask, aspect='auto', origin='lower', 
+    #            extent=[min_time, max_time, 0, f[-1]],
     #            cmap='viridis')
     
-
-    
     # plt.colorbar(label='Signal Strength (dB)')
-    # plt.title('FT8 Spectrogram with Candidate Signal Positions')
+    # plt.title('FT8 Spectrogram with Candidate Positions')
     # plt.xlabel('Time (s)')
     # plt.ylabel('Frequency (Hz)')
 
-    # plt.savefig('ft8_candidates_before.png', dpi=300, bbox_inches='tight')
+    # # 标记所有候选点
+    # for t_start, f_start in candidate_points:
+    #     # 使用不同颜色标记负时间点
+    #     color = 'red' if t_start < 0 else 'red'
+    #     plt.plot(t_start, f_start, '+', color=color, markersize=8)
 
-    # # Mark candidate signal positions
-    # for i, cand in enumerate(candidates):
-    #     # Calculate actual time and frequency
-    #     t_start = cand.abs_time / wf.time_osr  # 使用waterfall的time_osr进行时间转换
-    #     f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ  # 使用FT8符号频率间隔进行频率转换
-        
-    #     # 只添加红色十字标记
-    #     plt.plot(t_start, f_start, 'r+', markersize=8)
+    # # 如果有负时间点，添加图例
+    # if any(t < 0 for t, _ in candidate_points):
+    #     plt.plot([], [], '+', color='red', label='Positive time candidates')
+    #     plt.plot([], [], '+', color='red', label='Negative time candidates')
+    #     plt.legend()
 
     # plt.savefig('ft8_candidates.png', dpi=300, bbox_inches='tight')
     # plt.close()
