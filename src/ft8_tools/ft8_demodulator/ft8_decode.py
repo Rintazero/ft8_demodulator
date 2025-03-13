@@ -375,7 +375,10 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     for cand in candidates:
         success, message, status = ft8_decode_candidate(wf, cand, max_iterations)
         if success:
-            results.append((message, status))
+            time_sec = cand.abs_time / sample_rate
+            freq_hz = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
+            score = cand.score
+            results.append((message, status, time_sec, freq_hz, score))
     print(f"Decoded messages: {results}")
     return results 
 
