@@ -105,7 +105,7 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
     num_tones = 8  # FT8使用8-FSK调制
     
     # 修正搜索范围计算，确保不会越界
-    time_range = range(-10 * wf.time_osr, 20 * wf.time_osr)
+    time_range = range(-10 * wf.time_osr, wf.num_bins - FT8_LDPC_N*2)
     freq_range = range(0, wf.mag.shape[0] - (num_tones - 1) * wf.freq_osr)
     
     score_list = []
@@ -286,8 +286,26 @@ def create_waterfall_from_spectrogram(spectrogram: np.ndarray, time_osr: int, fr
 def decode_ft8_message(wave_data: np.ndarray, sample_rate: int, 
                       bins_per_tone: int = 2, steps_per_symbol: int = 2,
                       max_candidates: int = 20, min_score: int = 10,
-                      max_iterations: int = 20) -> List[Tuple[FT8Message, FT8DecodeStatus]]:
-    """解码FT8消息的主函数"""
+                      max_iterations: int = 20,
+                      freq_min: float = None,  # 最小频率限制 (Hz)
+                      freq_max: float = None   # 最大频率限制 (Hz)
+                      ) -> List[Tuple[FT8Message, FT8DecodeStatus]]:
+    """解码FT8消息的主函数
+    
+    Args:
+        wave_data: 波形数据
+        sample_rate: 采样率
+        bins_per_tone: 每个音调的频率bin数
+        steps_per_symbol: 每个符号的时间步数
+        max_candidates: 最大候选数量
+        min_score: 最小分数阈值
+        max_iterations: 最大迭代次数
+        freq_min: 最小频率限制 (Hz)，None表示不限制
+        freq_max: 最大频率限制 (Hz)，None表示不限制
+    
+    Returns:
+        List[Tuple[FT8Message, FT8DecodeStatus]]: 解码结果列表
+    """
     # 计算频谱图
     spectrogram, f, t = calculate_spectrogram(
         wave_data, sample_rate, bins_per_tone, steps_per_symbol
@@ -297,6 +315,14 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     positive_freq_mask = f >= 0
     spectrogram = spectrogram[positive_freq_mask]
     f = f[positive_freq_mask]
+    
+    # 应用频率限制
+    if freq_min is not None or freq_max is not None:
+        freq_min = freq_min if freq_min is not None else f[0]
+        freq_max = freq_max if freq_max is not None else f[-1]
+        freq_mask = (f >= freq_min) & (f <= freq_max)
+        spectrogram = spectrogram[freq_mask]
+        f = f[freq_mask]
     
     import matplotlib.pyplot as plt
     # 绘制频谱图
@@ -321,54 +347,54 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     # import matplotlib.pyplot as plt
     # import numpy as np
     
-    # plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(12, 8))
     
-    # # 收集所有有效的时间点，包括负值
-    # all_time_points = []
-    # candidate_points = []
-    # for cand in candidates:
-    #     t_idx = cand.abs_time // wf.time_osr
-    #     if t_idx < len(t):  # 只检查上界
-    #         t_start = t[max(0, t_idx)]  # 使用t[0]作为最小值
-    #         if t_idx < 0:  # 如果是负时间，使用线性外推
-    #             t_start = t[0] + t_idx * (t[1] - t[0])  # 假设时间间隔均匀
-    #         f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
-    #         all_time_points.append(t_start)
-    #         candidate_points.append((t_start, f_start))
+    # 收集所有有效的时间点，包括负值
+    all_time_points = []
+    candidate_points = []
+    for cand in candidates:
+        t_idx = cand.abs_time // wf.time_osr
+        if t_idx < len(t):  # 只检查上界
+            t_start = t[max(0, t_idx)]  # 使用t[0]作为最小值
+            if t_idx < 0:  # 如果是负时间，使用线性外推
+                t_start = t[0] + t_idx * (t[1] - t[0])  # 假设时间间隔均匀
+            f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
+            all_time_points.append(t_start)
+            candidate_points.append((t_start, f_start))
     
-    # # 确定实际的时间范围
-    # min_time = min(min(all_time_points) if all_time_points else t[0], t[0])
-    # max_time = max(max(all_time_points) if all_time_points else t[-1], t[-1])
+    # 确定实际的时间范围
+    min_time = min(min(all_time_points) if all_time_points else t[0], t[0])
+    max_time = max(max(all_time_points) if all_time_points else t[-1], t[-1])
     
-    # # 创建掩码数组，将t<0的部分设为透明
-    # mask = np.ones_like(spectrogram)
-    # time_points = np.linspace(min_time, max_time, spectrogram.shape[1])
-    # mask[:, time_points < 0] = np.nan
+    # 创建掩码数组，将t<0的部分设为透明
+    mask = np.ones_like(spectrogram)
+    time_points = np.linspace(min_time, max_time, spectrogram.shape[1])
+    mask[:, time_points < 0] = np.nan
     
-    # # Plot spectrogram with adjusted time range and mask
-    # plt.imshow(spectrogram * mask, aspect='auto', origin='lower', 
-    #            extent=[min_time, max_time, 0, f[-1]],
-    #            cmap='viridis')
+    # Plot spectrogram with adjusted time range and mask
+    plt.imshow(spectrogram * mask, aspect='auto', origin='lower', 
+               extent=[min_time, max_time, 0, f[-1]],
+               cmap='viridis')
     
-    # plt.colorbar(label='Signal Strength (dB)')
-    # plt.title('FT8 Spectrogram with Candidate Positions')
-    # plt.xlabel('Time (s)')
-    # plt.ylabel('Frequency (Hz)')
+    plt.colorbar(label='Signal Strength (dB)')
+    plt.title('FT8 Spectrogram with Candidate Positions')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Frequency (Hz)')
 
-    # # 标记所有候选点
-    # for t_start, f_start in candidate_points:
-    #     # 使用不同颜色标记负时间点
-    #     color = 'red' if t_start < 0 else 'red'
-    #     plt.plot(t_start, f_start, '+', color=color, markersize=8)
+    # 标记所有候选点
+    for t_start, f_start in candidate_points:
+        # 使用不同颜色标记负时间点
+        color = 'red' if t_start < 0 else 'red'
+        plt.plot(t_start, f_start, '+', color=color, markersize=8)
 
-    # # 如果有负时间点，添加图例
-    # if any(t < 0 for t, _ in candidate_points):
-    #     plt.plot([], [], '+', color='red', label='Positive time candidates')
-    #     plt.plot([], [], '+', color='red', label='Negative time candidates')
-    #     plt.legend()
+    # 如果有负时间点，添加图例
+    if any(t < 0 for t, _ in candidate_points):
+        plt.plot([], [], '+', color='red', label='Positive time candidates')
+        plt.plot([], [], '+', color='red', label='Negative time candidates')
+        plt.legend()
 
-    # plt.savefig('ft8_candidates.png', dpi=300, bbox_inches='tight')
-    # plt.close()
+    plt.savefig('ft8_candidates.png', dpi=300, bbox_inches='tight')
+    plt.close()
 
     # 解码候选信号
     results = []
@@ -380,6 +406,6 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
             score = cand.score
             results.append((message, status, time_sec, freq_hz, score))
     print(f"Decoded messages: {results}")
-    return results 
+    return results
 
 
