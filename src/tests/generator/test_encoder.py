@@ -28,7 +28,7 @@ class TestEncoder(unittest.TestCase):
         print("itones: ", itones)
 
     def test_ft8_encode(self):
-        payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
+        payload = np.array([0xAA, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0xF8], dtype=np.uint8)
         itones = encoder.ft8_encode(payload)
         print("ft8_encode-itones: ", itones)
 

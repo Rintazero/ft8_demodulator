@@ -43,7 +43,7 @@ def verify_decode_results(results: list) -> None:
     assert isinstance(results, list), "Decode results should be a list"
     
     if results:
-        for message, status in results:
+        for message, status, time_sec, freq_hz, score in results:
             assert isinstance(message, FT8Message), "Decoded message should be FT8Message type"
             assert isinstance(status, FT8DecodeStatus), "Decode status should be FT8DecodeStatus type"
             assert len(message.payload) == 10, "FT8 message payload should be 10 bytes"
@@ -74,6 +74,7 @@ def test_frequency_correction():
     fc = 500      # 载波频率（基带信号）
     sym_bin = 6.25  # 符号频率间隔
     sym_t = 0.16    # 符号时间长度
+    
     
     # 测试载荷
     test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)

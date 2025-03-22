@@ -104,6 +104,13 @@ def test_decode_ft8_message():
         f0=f0, 
         fc=fc
     )
+
+    snr_db = -10  # Define the desired signal-to-noise ratio in decibels
+    signal_power = np.mean(wave_data**2)  # Calculate the signal power
+    noise_power = signal_power / (10**(snr_db / 10))  # Calculate the noise power based on SNR
+    noise = np.sqrt(noise_power) * np.random.randn(len(wave_data))  # Generate noise
+    noisy_wave_data = wave_data + noise  # Add noise to the waveform data
+    wave_data = noisy_wave_data
     
     results = decode_ft8_message(
         wave_data=wave_data,
@@ -111,7 +118,7 @@ def test_decode_ft8_message():
         bins_per_tone=2,
         steps_per_symbol=2,
         max_candidates=20,
-        min_score=10,
+        min_score=1,
         max_iterations=20
     )
     
@@ -141,7 +148,10 @@ def test_decode_with_noise():
         wave_data=noisy_wave,
         sample_rate=fs,
         bins_per_tone=10,
-        steps_per_symbol=10
+        steps_per_symbol=10,
+        max_candidates=20,
+        min_score=5,
+        max_iterations=20
     )
     
     if results:
