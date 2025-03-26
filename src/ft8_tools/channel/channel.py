@@ -4,6 +4,7 @@ import skyfield.api
 import numpy
 import sgp4.api
 import datetime
+from pymap3d.aer import eci2aer
 from pymap3d.eci import eci2ecef
 from pymap3d.ecef import ecef2eci,geodetic2ecef,geodetic2eci
 from pymap3d.sidereal import datetime2sidereal
@@ -90,6 +91,17 @@ class Channel:
         normalized_doppler_frequency_shift = -1 * vector_vel_groundStation_to_satellite / c
 
         return normalized_doppler_frequency_shift
+    
+    def calculate_elevation_groundStation_to_satellite(self,timestamp: datetime.datetime):
+        # eci_pos = self.groundStation.get_ground_station_position_eci(timestamp)
+        jd, fr = sgp4.api.jday(timestamp.year,timestamp.month,timestamp.day,timestamp.hour,timestamp.minute,timestamp.second)
+        e,r,v = self.satellite.sgp4(jd, fr)
+
+        r = numpy.array(r) * 1e3
+
+        az,el,_range = eci2aer(r[0],r[1],r[2],self.groundStation.latitude_deg,self.groundStation.longitude_deg,self.groundStation.altitude_m,timestamp)
+        
+        return el
 
 
 def eci2ecef_velocity(v_eci, time):
