@@ -48,6 +48,24 @@ compensated_signal = signal * doppler_shift_correction
 down_sample_factor = 25
 down_sampled_signal = compensated_signal[::down_sample_factor]
 
+# 保存补偿后的信号
+np.save(os.path.join(workspace_path, 'compensated_signal.npy'), compensated_signal)
+
+# 保存降采样之后的信号
+np.save(os.path.join(workspace_path, 'down_sampled_signal.npy'), down_sampled_signal)
+
+os.makedirs(workspace_path, exist_ok=True)
+info_path = os.path.join(workspace_path, 'signal_processing_info.txt')
+with open(info_path, 'w') as f:
+    f.write("Signal Processing Info\n")
+    f.write("----------------------------------\n")
+    f.write("compensated_signal Info\n")
+    f.write(f"fs_Hz: {fs_Hz}\n")
+    f.write("----------------------------------\n")
+    f.write("down_sampled_signal Info\n")
+    f.write(f"down_sample_factor: {down_sample_factor}\n")
+    f.write(f"fs_Hz: {fs_Hz / down_sample_factor}\n")
+
 # 绘制频谱图
 plt.figure(figsize=(12, 8))
 
