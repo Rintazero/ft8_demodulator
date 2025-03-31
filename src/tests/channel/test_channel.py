@@ -30,6 +30,8 @@ duration_us = 12640 * delta_t_us
 
 num_samples = int(duration_us / delta_t_us)
 
+print("num_samples: ", num_samples)
+
 normalized_doppler_frequency_shift_seq = numpy.zeros(num_samples)
 elevation_deg_groundStation_to_satellite_seq = numpy.zeros(num_samples)
 
@@ -38,7 +40,7 @@ print(f"卫星轨道周期: {satellite_period_minutes} 分钟")
 
 for i in range(num_samples):
     # i = i - num_samples // 2
-    t = StartTime - datetime.timedelta(microseconds = (i - num_samples // 2) * delta_t_us)
+    t = StartTime+ datetime.timedelta(microseconds = (i - num_samples // 2) * delta_t_us)
 
     normalized_doppler_frequency_shift_by_ecef = channel.calculate_normalized_doppler_frequency_shift_by_ecef(t)
     elevation_deg_groundStation_to_satellite = channel.calculate_elevation_groundStation_to_satellite(t)

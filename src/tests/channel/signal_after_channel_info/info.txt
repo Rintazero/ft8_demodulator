@@ -1,0 +1,17 @@
+Signal Info
+----------------------------------
+Basic Info
+fs_Hz: 20000.0
+f0_Hz: 100
+fc_Hz: 2450000000.0
+Signal Time: 2024-06-01 15:59:23
+Signal Duration: 13
+Signal Time Shift: 0
+payload: 1c3f8a6ae207a1e39451
+----------------------------------
+Doppler Shift Linear Regression Info
+Slope: -0.03277102561215089
+Intercept: 5322.926975654065
+R-squared: 0.9999995379063006
+P-value: 0.0
+Standard Error: 4.368880377576494e-08

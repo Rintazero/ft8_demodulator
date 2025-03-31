@@ -1,0 +1,14 @@
+Doppler Frequency Shift Info
+----------------------------------
+Parameters
+Start Time: 2024-06-01 15:59:19
+Signal Time(s): 20
+fs_Hz: 50000.0
+fc_Hz: 2450000000.0
+----------------------------------
+Linear Regression Info
+Slope: -0.013079927101496858
+Intercept: 7928.5668029596945
+R-squared: -0.999998555941919
+P-value: 0.0
+Standard Error: 2.2228673999128905e-08

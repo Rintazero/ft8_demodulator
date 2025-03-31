@@ -5,6 +5,7 @@ import numpy
 import sgp4.api
 import datetime
 import folium
+import numpy as np
 import matplotlib.pyplot as plt
 import os
 from pymap3d.aer import eci2aer
@@ -12,27 +13,7 @@ from pymap3d.eci import eci2ecef
 from pymap3d.ecef import geodetic2ecef,geodetic2eci,eci2geodetic
 from pymap3d.sidereal import datetime2sidereal
 import numpy as np
-
-# 多普勒频移计算思路
-# 1. 给定 地面站位置 (LLA)
-# 2. 给定 卫星轨道数据 (TLE)
-# 3. 确定时间
-# 4. 计算给定时间下 卫星运动状态 (ECI)
-# 5. 计算地面站 ECI 
-
-
-# satelliteTLE = {
-#     "name": "StarLink-1030",
-#     "TLE_line1": "1 44735U 19074Y   24151.67073227  .00005623  00000+0  39580-3 0  9994",
-#     "TLE_line2": "2 44735  53.0540 235.6876 0001395  85.6354 274.4795 15.06429209250797",
-# }
-
-# groundStation = {
-#     "name": "Station",
-#     "latitude_deg": 20.7634433315784,
-#     "longitude_deg": 116.560494091634,
-#     "altitude_m": 0,
-# }
+from scipy import stats
 
 
 class GroundStation:
@@ -269,7 +250,63 @@ class Channel:
             self.get_satellite_star_point_map_by_folium(start_time, duration // delta_t, delta_t, duration // delta_t, is_save_fig, save_fig_path)
         else:
             plt.show()
+    
+    def get_doppler_frequency_shift_sequence(self, start_time: datetime.datetime, signal_time_s: float, fs_Hz: int, fc_Hz: float, save_path: str = None):
+        num_samples = int(signal_time_s * fs_Hz)
+        doppler_shift_Hz_seq = numpy.zeros(num_samples, dtype=np.float64)
+        for i in range(num_samples):
+            if i % (num_samples // 10) == 0:
+                print("doppler_shift_calc_progress: ", i/num_samples*100, "%")
+            timestamp = datetime.datetime.fromtimestamp(start_time.timestamp() + i/fs_Hz)
+            doppler_shift_Hz_seq[i] = self.calculate_normalized_doppler_frequency_shift_by_ecef(timestamp) * fc_Hz
+
+        # Perform linear regression on the doppler_shift_Hz_seq
+        x = range(num_samples)
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x, doppler_shift_Hz_seq)
+        doppler_shift_Hz_seq_linear = slope * x + intercept
+
+        time_seq = [i / fs_Hz for i in range(len(doppler_shift_Hz_seq))]
+        regression_line = [slope * i + intercept for i in x]
         
+        plt.figure(figsize=(10, 5))
+        plt.plot(time_seq, doppler_shift_Hz_seq, label='Doppler Shift (Hz)', color='blue')
+        plt.plot(time_seq, regression_line, label='Linear Regression', color='red', linestyle='--')
+
+        plt.title('Doppler Shift Over Time')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Doppler Shift (Hz)')
+        plt.grid()
+        plt.legend(loc='upper left')  # Added legend location
+
+        if save_path is not None:
+            os.makedirs(save_path, exist_ok=True)
+            plt.savefig(os.path.join(save_path, 'doppler_frequency_shift.png'))
+
+        if save_path is not None:
+            os.makedirs(save_path, exist_ok=True)
+            info_path = os.path.join(save_path, 'doppler_frequency_shift_info.txt')
+            with open(info_path, 'w') as f:
+                f.write("Doppler Frequency Shift Info\n")
+                f.write("----------------------------------\n")
+                f.write("Parameters\n")
+                f.write(f"Start Time: {start_time}\n")
+                f.write(f"Signal Time(s): {signal_time_s}\n")
+                f.write(f"fs_Hz: {fs_Hz}\n")
+                f.write(f"fc_Hz: {fc_Hz}\n")
+                f.write("----------------------------------\n")
+                f.write("Linear Regression Info\n")
+                f.write(f"Slope: {slope}\n")
+                f.write(f"Intercept: {intercept}\n")
+                f.write(f"R-squared: {r_value}\n")
+                f.write(f"P-value: {p_value}\n")
+                f.write(f"Standard Error: {std_err}\n")
+                
+
+        if save_path is not None:
+            os.makedirs(save_path, exist_ok=True)
+            np.save(os.path.join(save_path, 'doppler_frequency_shift.npy'), doppler_shift_Hz_seq)
+
+        return doppler_shift_Hz_seq
 
 def eci2ecef_velocity(v_eci, time):
     """
