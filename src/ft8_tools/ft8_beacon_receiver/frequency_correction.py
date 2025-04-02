@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from scipy.interpolate import interp1d
 from sklearn.linear_model import LinearRegression
+from ..ft8_demodulator.ftx_types import FT8Waterfall
 
 # 设置matplotlib字体设置
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # 使用DejaVu Sans以获得更好的兼容性
@@ -24,7 +25,7 @@ def gfsk_pulse(bt, t):
     output = 0.5 * (scipy.special.erf(k*bt*(t+0.5)) - scipy.special.erf(k*bt*(t-0.5)))
     return output
 
-def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_range=None, params=None):
+def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float, sym_t: float, waterfall: FT8Waterfall, params=None):
     """
     对FT8信号进行频率漂移校正
     
@@ -33,10 +34,8 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     fs: 采样率
     sym_bin: 符号频率间隔
     sym_t: 符号时间长度
-    waterfall_freq_range: 瀑布图频率范围 (默认: None，表示使用全部STFT频域范围)
+    waterfall: FT8Waterfall对象，包含频谱图数据
     params: 可选参数字典，包含以下字段：
-        - time_osr: 时间过采样率 (默认: 2)
-        - freq_osr: 频率过采样率 (默认: 2)
         - nsync_sym: 同步符号数量 (默认: 7)
         - ndata_sym: 数据符号数量 (默认: 58)
         - zscore_threshold: Z分数阈值 (默认: 5)
@@ -50,8 +49,6 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     """
     # 设置默认参数
     default_params = {
-        'time_osr': 2,
-        'freq_osr': 2,
         'nsync_sym': 7,
         'ndata_sym': 58,
         'zscore_threshold': 5,
@@ -67,8 +64,8 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
                 params[key] = value
 
     # 基本变量
-    time_osr = params['time_osr']
-    freq_osr = params['freq_osr']
+    time_osr = waterfall.time_osr
+    freq_osr = waterfall.freq_osr
     nsync_sym = params['nsync_sym']
     ndata_sym = params['ndata_sym']
     zscore_threshold = params['zscore_threshold']
@@ -79,27 +76,9 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     nsamples = len(wave_complex)
     tlength = nsamples / fs
 
-    # STFT 分析
-    nsps = int(sym_t * fs)
-    nfft = int(fs * sym_t * freq_osr)
-    hann_window = scipy.signal.windows.hann(M=nfft, sym=False)
-    sft = scipy.signal.ShortTimeFFT(win=hann_window, hop=nsps//time_osr, fs=fs, fft_mode="onesided")
-    sx = sft.stft(np.real(wave_complex))
+    # 从waterfall中获取频谱图数据
+    sx_filtered_db = waterfall.mag
     
-    # 频率范围过滤
-    freqs = np.linspace(0, fs/2, sx.shape[0])
-    
-    # 如果未指定频率范围，则使用全部STFT频域范围
-    if waterfall_freq_range is None:
-        waterfall_freq_range = (0, fs/2)
-        
-    freq_mask = (freqs >= waterfall_freq_range[0]) & (freqs <= waterfall_freq_range[1])
-    sx_filtered = sx[freq_mask, :]
-    sx_filtered_real = np.real(sx_filtered)
-    sx_filtered_imag = np.imag(sx_filtered)
-    sx_filtered_power = sx_filtered_real**2 + sx_filtered_imag**2
-    sx_filtered_db = 10 * np.log10(sx_filtered_power)
-
     # 计算最大幅度频率-时间序列
     window_sum = np.zeros(sx_filtered_db.shape)
     for i in range(sx_filtered_db.shape[0]):
@@ -114,27 +93,10 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     for i in range(sx_filtered_db.shape[1]):
         max_freq_indices[i] = window_indices[i] + np.argmax(sx_filtered_db[window_indices[i]:window_indices[i]+freq_osr, i])
     max_freq_indices = max_freq_indices.astype(int)
-    
-    
 
     # 计算实际频率
-    freqs_filtered = freqs[freq_mask]
-    max_freqs = waterfall_freq_range[0] + freqs_filtered[max_freq_indices]
-    
-    # 处理前绘制max_freqs
-    if debug_plots:
-        plt.figure(figsize=(10, 6))
-        plt.plot(np.linspace(0, tlength, len(max_freqs)), max_freqs, marker='o', linestyle='-', color='blue', label='Original Data')
-        plt.title('Maximum Frequency vs Time Before Processing')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
-        plt.grid(True)
-        plt.legend()
-        plt.xlim(0, tlength)
-        plt.ylim(waterfall_freq_range[0], waterfall_freq_range[1])
-        plt.savefig('max_frequencies_before_processing.png')
-        plt.close()
-
+    freq_step = sym_bin / freq_osr
+    max_freqs = max_freq_indices * freq_step
     # 使用Z分数方法识别异常值
     iteration_num = 0
     outlier_indices = np.array([])
@@ -162,30 +124,11 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
         iteration_num += 1
 
     # 更新最大频率
-    max_freqs = waterfall_freq_range[0] + freqs_filtered[max_freq_indices]
-    
-    # 处理后绘制max_freqs
-    if debug_plots:
-        plt.figure(figsize=(10, 6))
-        plt.plot(np.linspace(0, tlength, len(max_freqs)), max_freqs, marker='o', linestyle='-', color='blue', label='Processed Data')
-        plt.title('Maximum Frequency vs Time After Processing')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
-        plt.grid(True)
-        plt.legend()
-        plt.xlim(0, tlength)
-        plt.ylim(waterfall_freq_range[0], waterfall_freq_range[1])
-        
-        # 用红色标记异常值
-        plt.scatter(outlier_indices * sym_t/time_osr, max_freqs[outlier_indices], color='red', marker='x', s=100, label='Outliers')
-        plt.legend()
-        plt.savefig('max_frequencies_after_processing.png')
-        plt.close()
+    max_freqs = max_freq_indices * freq_step
 
     # 构造同步序列
     sync_seq = (np.array([3, 1, 4, 0, 6, 5, 2]) + 1)
     sync_seq = sync_seq - np.mean(sync_seq)
-
 
     # 每个符号的GFSK脉冲整形
     samples_per_sym = time_osr * 2
@@ -202,48 +145,20 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     # 创建三个同步序列
     three_sync_correlation_seq = np.zeros((3*nsync_sym + ndata_sym - 1) * time_osr + 1 + samples_per_sym)
 
-
-
     for i in range(3):
         start_idx = i*(nsync_sym+ndata_sym//2)*time_osr
         end_idx = start_idx + len(sync_correlation_seq)
         three_sync_correlation_seq[start_idx:end_idx] = sync_correlation_seq
-
-
-        # 绘制three_sync_correlation_seq
-    if debug_plots:
-        plt.figure(figsize=(10, 6))
-        plt.plot(three_sync_correlation_seq, marker='.', linestyle='-', color='b')
-        plt.title('Three Sync Correlation Sequence')
-        plt.xlabel('Sample Index')
-        plt.ylabel('Amplitude')
-        plt.grid(True)
-        plt.savefig('three_sync_correlation_seq.png')
-        plt.close()
         
     # 相关计算
     sync_correlation = np.correlate(max_freqs, three_sync_correlation_seq, mode='full')
 
     # TODO: 这里需要优化，因为同步序列相关波形在同步序列结束后的值会影响相关峰值的检测
     sync_correlation[:len(three_sync_correlation_seq) -1] = 0
-    # 绘制同步相关波形
-    if debug_plots:
-        plt.figure(figsize=(10, 6))
-        plt.plot(sync_correlation, marker='o', linestyle='-', color='b')
-        plt.title('Sync Sequence Correlation')
-        plt.xlabel('Sample Index')
-        plt.ylabel('Correlation Value')
-        plt.grid(True)
-        plt.savefig('sync_correlation.png')
-        plt.close()
-
-
 
     correlation_peak_index = np.argmax(sync_correlation)
     correlation_peak_time_block_index = correlation_peak_index - (len(three_sync_correlation_seq) - 1) + samples_per_sym//2
 
-
-    print("correlation_peak_time_block_index", correlation_peak_time_block_index)
     # 回归分析
     regression_x = np.array([])
     regression_y = np.array([])
@@ -254,7 +169,6 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
         x_step = sym_t/time_osr
         regression_x = np.append(regression_x, np.arange(start_idx, min(end_idx, len(max_freqs))) * x_step)
         regression_y = np.append(regression_y, max_freqs[start_idx:min(end_idx, len(max_freqs))])
-
 
     regression_x = regression_x.reshape(-1, 1)
     model = LinearRegression()
@@ -267,80 +181,5 @@ def correct_frequency_drift(wave_complex, fs, sym_bin, sym_t, waterfall_freq_ran
     # 频率偏移补偿
     compensation_carrier = np.exp(-2j*np.pi*f_shift_est_k_hz_psample*np.arange(nsamples)**2/(2*fs))
     wave_compensated = wave_complex * compensation_carrier
-
-    # 可视化
-    if debug_plots:
-        # STFT幅度图
-        plt.figure(figsize=(10, 6))
-        plt.imshow(sx_filtered_db, aspect='auto', origin='lower', 
-                extent=[0, tlength, waterfall_freq_range[0], waterfall_freq_range[1]])
-        plt.colorbar(label='Magnitude (dB)')
-        plt.title('Short-Time Fourier Transform (STFT) Magnitude (dB)')
-        plt.ylabel('Frequency (Hz)')
-        plt.xlabel('Time (s)')
-        plt.grid()
-        plt.savefig('stft_magnitude.png')
-        plt.close()
-
-        # 最大频率随时间变化图
-        plt.figure(figsize=(10, 6))
-        plt.plot(np.linspace(0, tlength, len(max_freqs)), max_freqs, marker='o', linestyle='-', zorder=1)
-        plt.title('Maximum Frequency vs Time')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
-        plt.grid()
-        plt.xlim(0, tlength)
-        plt.ylim(waterfall_freq_range[0], waterfall_freq_range[1])
-        highlight_index = correlation_peak_time_block_index + list(range(nsync_sym*time_osr))
-        plt.scatter(highlight_index * sym_t/time_osr, max_freqs[highlight_index], color='red', marker='o', zorder=2)
-        plt.scatter(outlier_indices * sym_t/time_osr, max_freqs[outlier_indices], color='green', marker='o', zorder=2)
-        plt.grid()
-        plt.savefig('max_frequencies.png')
-        plt.close()
-
-        # 同步相关图
-        plt.figure(figsize=(10, 6))
-        plt.plot(sync_correlation, marker='o', linestyle='-', color='b')
-        plt.title('Sync Correlation')
-        plt.xlabel('Sample Index')
-        plt.ylabel('Correlation Value')
-        plt.grid()
-        plt.xlim(0, len(sync_correlation))
-        plt.ylim(np.min(sync_correlation), np.max(sync_correlation))
-        plt.savefig('sync_correlation.png')
-        plt.close()
-
-        # 回归分析图
-        plt.figure(figsize=(10, 6))
-        plt.scatter(regression_x, regression_y, color='blue', alpha=0.5, label='Sync Sequence Points')
-        plt.plot(regression_x, model.predict(regression_x), color='red', label='Fitted Line')
-        plt.title('Frequency Drift Regression Analysis')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
-        plt.grid(True)
-        plt.legend()
-        plt.savefig('regression_analysis.png')
-        plt.close()
-
-        # 校正后的信号STFT
-        compensated_freq_range = (waterfall_freq_range[0], waterfall_freq_range[0]+200)
-        wave_compensated_sx = sft.stft(np.real(wave_compensated))
-        compensated_freq_mask = (freqs >= compensated_freq_range[0]) & (freqs <= compensated_freq_range[1])
-        wave_compensated_sx_filtered = wave_compensated_sx[compensated_freq_mask, :]
-        wave_compensated_sx_filtered_real = np.real(wave_compensated_sx_filtered)
-        wave_compensated_sx_filtered_imag = np.imag(wave_compensated_sx_filtered)
-        wave_compensated_sx_filtered_power = wave_compensated_sx_filtered_real**2 + wave_compensated_sx_filtered_imag**2
-        wave_compensated_sx_filtered_db = 10 * np.log10(wave_compensated_sx_filtered_power)
-        
-        plt.figure(figsize=(10, 6))
-        plt.imshow(wave_compensated_sx_filtered_db, aspect='auto', origin='lower', 
-                extent=[0, tlength, compensated_freq_range[0], compensated_freq_range[1]])
-        plt.colorbar(label='Magnitude (dB)')
-        plt.title('Compensated Signal STFT Magnitude (Filtered)')
-        plt.ylabel('Frequency (Hz)')
-        plt.xlabel('Time (s)')
-        plt.grid()
-        plt.savefig('wave_compensated_stft.png')
-        plt.close()
 
     return wave_compensated, f_shift_est_k_hz_psample
