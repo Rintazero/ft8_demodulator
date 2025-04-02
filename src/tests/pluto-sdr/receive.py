@@ -10,29 +10,43 @@ import os
 # Add src directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-sample_rate = 1e6 # Hz
-center_freq = 2.4e9 - 1e6 # Hz
-num_samps = int(sample_rate * 0.16 * 10) # number of samples returned per call to rx()
+# Import FT8 demodulation modules
+from ft8_tools.ft8_demodulator.ft8_decode import decode_ft8_message
 
-sdr = adi.Pluto('ip:192.168.2.1')
-# sdr.gain_control_mode_chan0 = 'manual'
-# sdr.rx_hardwaregain_chan0 = 0.0 # dB
+# SDR parameters
+sample_rate = 1e6  # Hz
+center_freq = 1000e6  # Hz
+samples_per_buffer = int(sample_rate * 0.16)  # 一个符号周期的样本数
+num_buffers = 30  # 需要采集的缓冲区数量
+
+# Initialize SDR
+sdr = adi.Pluto('ip:192.168.3.2')
+sdr.gain_control_mode_chan0 = 'manual'
+sdr.rx_hardwaregain_chan0 = -20 # dB
 sdr.rx_lo = int(center_freq)
 sdr.sample_rate = int(sample_rate)
 sdr.rx_rf_bandwidth = int(sample_rate) # filter width, just set it to the same as sample rate for now
-sdr.rx_buffer_size = num_samps
+sdr.rx_buffer_size = samples_per_buffer
 
-samples = sdr.rx() # receive samples off Pluto
+# 采集多个缓冲区的数据
+print("Collecting samples...")
+samples = np.array([])
+for i in range(num_buffers):
+    buffer_samples = sdr.rx()
+    samples = np.concatenate([samples, buffer_samples])
+    print(f"Collected buffer {i+1}/{num_buffers}")
 
-# 移除直流偏置
+# Remove DC offset
 samples = samples - np.mean(samples)
+print(f"Total samples collected: {len(samples)}")
+print(f"First 10 samples: {samples[:10]}")
 
-# 设置spectrogram参数
-samples_per_symbol = int(sample_rate * 0.16)  # nperseg参数
-overlap_samples = samples_per_symbol // 2  # noverlap参数
-dft_length = samples_per_symbol  # nfft参数
+# Spectrogram parameters
+samples_per_symbol = int(sample_rate * 0.16)  # nperseg parameter
+overlap_samples = samples_per_symbol // 2  # noverlap parameter
+dft_length = samples_per_symbol  # nfft parameter
 
-# 计算频谱图
+# Calculate spectrogram
 frequencies, times, Sxx = signal.spectrogram(
     samples,
     fs=sample_rate,
@@ -45,14 +59,53 @@ frequencies, times, Sxx = signal.spectrogram(
     scaling='spectrum'
 )
 
-# 绘制频谱图
-plt.figure()
-plt.pcolormesh(times, frequencies/1e6, 10 * np.log10(np.abs(Sxx)))
-plt.colorbar(label='功率谱密度 (dB)')
-plt.ylabel('频率偏移 (MHz)')
-plt.xlabel('时间 (秒)')
-plt.title(f'频谱图 (中心频率: {center_freq/1e6:.1f} MHz)')
-plt.tight_layout()  # 自动调整布局
+# Shift zero frequency to center
+frequencies = np.fft.fftshift(frequencies)
+Sxx = np.fft.fftshift(Sxx, axes=0)
+
+# Decode the signal
+print("Attempting to decode FT8 message...")
+decode_results = decode_ft8_message(
+    wave_data=samples,
+    sample_rate=sample_rate,
+    bins_per_tone=2,
+    steps_per_symbol=2,
+    max_candidates=100,
+    min_score=5,
+    max_iterations=20,
+    # freq_min=-1000,  # 设置最小频率为 -3kHz
+    freq_max=10000    # 设置最大频率为 +3kHz
+)
+
+# Print decode results
+if decode_results:
+    print("\nSuccessfully decoded messages:")
+    for message, status, time_sec, freq_hz, score in decode_results:
+        print(f"Message payload: {message.payload.hex()}")
+        print(f"CRC check: {status.crc_calculated}")
+        print(f"LDPC errors: {status.ldpc_errors}")
+        print(f"Time: {time_sec:.2f} s")
+        print(f"Frequency: {freq_hz:.1f} Hz")
+        print(f"Score: {score}\n")
+else:
+    print("No messages were successfully decoded.")
+
+# Save samples data
+samples_file = 'received_samples.npy'
+np.save(samples_file, samples)
+print(f"Saved samples to {samples_file}")
+
+# Plot spectrogram
+plt.figure(figsize=(12, 6))
+plt.imshow(10 * np.log10(np.abs(Sxx)), 
+          aspect='auto', 
+          origin='lower',
+          extent=[times[0], times[-1], frequencies[0]/1e6, frequencies[-1]/1e6])
+plt.colorbar(label='Power Spectral Density (dB)')
+plt.ylabel('Frequency Offset (MHz)')
+plt.xlabel('Time (s)')
+plt.title(f'Spectrogram (Center Frequency: {center_freq/1e6:.1f} MHz)')
+plt.tight_layout()
 plt.savefig('spectrogram.png', dpi='figure', bbox_inches='tight')
 plt.close()
 
