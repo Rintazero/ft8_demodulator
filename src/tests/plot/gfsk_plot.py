@@ -36,7 +36,7 @@ def plot_full_waveform():
             'b-', label='_nolegend_')  # _nolegend_防止重复显示标签
     plt.grid(True)
     plt.xlabel('Time (seconds)')
-    plt.ylabel('Amplitude')
+    plt.ylabel('Frequency (Hz)')
     plt.title('GFSK Modulation Waveform')
     plt.legend()
     plt.savefig('gfsk_waveform_full.png')
@@ -103,7 +103,7 @@ def plot_with_freq_offset():
             'b-', label='_nolegend_')
     ax1.grid(True)
     ax1.set_xlabel('Time (seconds)')
-    ax1.set_ylabel('Amplitude')
+    ax1.set_ylabel('Frequency (Hz)')
     ax1.set_title('Original GFSK Waveform')
     ax1.legend()
     
@@ -117,7 +117,7 @@ def plot_with_freq_offset():
             'b-', label='_nolegend_')
     ax2.grid(True)
     ax2.set_xlabel('Time (seconds)')
-    ax2.set_ylabel('Amplitude')
+    ax2.set_ylabel('Frequency (Hz)')
     ax2.set_title('GFSK Waveform with Linear Offset')
     ax2.legend()
     

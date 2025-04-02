@@ -22,6 +22,7 @@ from src.ft8_tools.ft8_demodulator.ft8_decode import (
     FT8Message,
     FT8DecodeStatus,
 )
+from src.ft8_tools.ft8_demodulator.ftx_types import FT8Waterfall
 
 def save_spectrogram(spectrogram: np.ndarray, filename: str, title: str) -> None:
     """Save spectrogram to file"""
@@ -156,21 +157,27 @@ def test_frequency_correction():
     
     save_spectrogram(orig_spectrogram_positive, 'original_noisy_spectrogram.png', 'Original Noisy Signal with Frequency Drift')
     
-    # 尝试直接解码带频偏的信号
+    # 创建FT8Waterfall对象
+    waterfall = FT8Waterfall(
+        mag=orig_spectrogram_positive,
+        time_osr=2,
+        freq_osr=2
+    )
     
     # 应用频率校正 - 直接使用复信号进行校正
     print("Applying frequency correction...")
     wave_corrected, estimated_drift_rate = correct_frequency_drift(
-        wave_noisy, fs, sym_bin, sym_t,
+        wave_noisy, 
+        fs, 
+        sym_bin, 
+        sym_t,
+        waterfall,
         params={
-            'time_osr': 2,
-            'freq_osr': 2,
             'nsync_sym': 7,
             'ndata_sym': 58,
-            'debug_plots': True,
-            # 'waterfall_freq_range': (100, 500),  # 调整频率范围以匹配信号
             'zscore_threshold': 5,
-            'max_iteration_num': 400000
+            'max_iteration_num': 400000,
+            'debug_plots': False
         }
     )
     
