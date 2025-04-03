@@ -70,7 +70,7 @@ def test_frequency_correction():
     print("Starting frequency correction test...")
     
     # 设置基本参数
-    fs = 20000  # 采样率
+    fs = (1024)*16  # 采样率
     f0 = 300    # 音频频率
     fc = 500      # 载波频率（基带信号）
     sym_bin = 6.25  # 符号频率间隔
@@ -78,7 +78,7 @@ def test_frequency_correction():
     
     
     # 测试载荷
-    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
+    test_payload = np.random.randint(0, 256, size=10, dtype=np.uint8)
     
     # 生成测试波形数据 - 实信号
     print("Generating FT8 real signal...")
@@ -95,7 +95,8 @@ def test_frequency_correction():
     
     # 设置频率漂移参数
     fShift_t0_Hz = 0.0  # 初始频偏
-    fShift_k_Hzpsample = 568.0 / fs  # 频偏变化率
+    fShift_k_Hzpsample = 568.0 / fs + 0.16 * (6.25*-100)/ fs  # 频偏变化率
+    
     print(f"Frequency drift rate: {fShift_k_Hzpsample} Hz/sample")
     
     # 生成频移载波
@@ -132,7 +133,7 @@ def test_frequency_correction():
 
     # 添加高斯噪声
     print("Adding Gaussian noise...")
-    SNR = -5  # 信噪比(dB)
+    SNR = 100  # 信噪比(dB)
     
     wave_power = np.mean(np.abs(wave_shifted)**2)
     noise_power = wave_power / (10**(SNR/10))
@@ -205,7 +206,9 @@ def test_frequency_correction():
         steps_per_symbol=2,
         max_candidates=20,
         min_score=5,
-        max_iterations=20
+        max_iterations=20,
+        freq_min=800,
+        freq_max=1200,
     )
     
     print(f"Number of decode results after frequency correction: {len(results_after_correction)}")

@@ -5,6 +5,7 @@ from scipy import stats
 from scipy.interpolate import interp1d
 from sklearn.linear_model import LinearRegression
 from ..ft8_demodulator.ftx_types import FT8Waterfall
+from sklearn.preprocessing import PolynomialFeatures
 
 # 设置matplotlib字体设置
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # 使用DejaVu Sans以获得更好的兼容性
@@ -132,6 +133,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
 
     # 每个符号的GFSK脉冲整形
     samples_per_sym = time_osr * 2
+    print("samples_per_sym: ", samples_per_sym)
     t_pulse = np.linspace(-1, 1, samples_per_sym+1)
     gfsk_shape = gfsk_pulse(bt=2.0, t=t_pulse)
 
@@ -153,12 +155,24 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 相关计算
     sync_correlation = np.correlate(max_freqs, three_sync_correlation_seq, mode='full')
 
+    plt.figure(figsize=(10, 6))
+    plt.plot(sync_correlation)
+    plt.savefig('sync_correlation.png')
+    plt.close()
+
     # TODO: 这里需要优化，因为同步序列相关波形在同步序列结束后的值会影响相关峰值的检测
-    sync_correlation[:len(three_sync_correlation_seq) -1] = 0
+    sync_correlation[:len(three_sync_correlation_seq) -1-5] = 0
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(sync_correlation)
+    plt.savefig('sync_correlation_after_zero.png')
+    plt.close()
 
     correlation_peak_index = np.argmax(sync_correlation)
     correlation_peak_time_block_index = correlation_peak_index - (len(three_sync_correlation_seq) - 1) + samples_per_sym//2
 
+    print("three_sync_correlation_seq length: ", len(three_sync_correlation_seq))
+    print(f"correlation_peak_time_block_index: {correlation_peak_time_block_index}")
     # 回归分析
     regression_x = np.array([])
     regression_y = np.array([])
@@ -171,15 +185,57 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         regression_y = np.append(regression_y, max_freqs[start_idx:min(end_idx, len(max_freqs))])
 
     regression_x = regression_x.reshape(-1, 1)
+    # 创建二次多项式特征
+    poly = PolynomialFeatures(degree=2)
+    X_poly = poly.fit_transform(regression_x)
+    
+    # 使用多项式特征进行回归
     model = LinearRegression()
-    model.fit(regression_x, regression_y)
-    f_shift_est_k_hz_ps = model.coef_[0]  # 估计的频率漂移率 (Hz/s)
+    model.fit(X_poly, regression_y)
+    
+    # 获取二次项系数（频率漂移加速度）和一次项系数（频率漂移率）
+    f_shift_acc = model.coef_[2]  # 二次项系数 (Hz/s²)
+    f_shift_rate = model.coef_[1]  # 一次项系数 (Hz/s)
+    f_shift_est_k_hz_ps = model.coef_[1]  # 保持与原代码兼容的返回值
+    
+    # 绘制拟合曲线和原始数据点
+    if True:
+        plt.figure(figsize=(10, 6))
+        # 绘制原始数据点
+        plt.scatter(regression_x, regression_y, color='blue', label='原始数据点')
+        
+        # 生成平滑曲线用的x值
+        x_smooth = np.linspace(regression_x.min(), regression_x.max(), 100).reshape(-1, 1)
+        x_smooth_poly = poly.transform(x_smooth)
+        
+        # 计算拟合曲线的y值
+        y_smooth = model.predict(x_smooth_poly)
+        
+        # 绘制拟合曲线
+        plt.plot(x_smooth, y_smooth, color='red', label='二次多项式拟合')
+        
+        # 添加标签和标题
+        plt.xlabel('时间 (秒)')
+        plt.ylabel('频率 (Hz)')
+        plt.title('频率漂移二次拟合')
+        plt.legend()
+        plt.grid(True)
+        
+        # 显示拟合参数
+        equation = f'拟合方程: f(t) = {f_shift_acc:.2f}t² + {f_shift_rate:.2f}t + {model.intercept_:.2f}'
+        plt.figtext(0.5, 0.01, equation, ha='center', fontsize=12)
+        
+        # 保存图像
+        plt.savefig('frequency_drift_fitting.png')
+        plt.close()
     
     # 转换为每个采样点的频率漂移率
     f_shift_est_k_hz_psample = f_shift_est_k_hz_ps / fs
+    f_shift_est_k_hz_psample_acc = f_shift_acc / fs**2
 
+    array_range = np.arange(nsamples)
     # 频率偏移补偿
-    compensation_carrier = np.exp(-2j*np.pi*f_shift_est_k_hz_psample*np.arange(nsamples)**2/(2*fs))
+    compensation_carrier = np.exp(-2j*np.pi*(f_shift_est_k_hz_psample*array_range**2+f_shift_est_k_hz_psample_acc*array_range**3)/(2*fs))
     wave_compensated = wave_complex * compensation_carrier
 
     return wave_compensated, f_shift_est_k_hz_psample
