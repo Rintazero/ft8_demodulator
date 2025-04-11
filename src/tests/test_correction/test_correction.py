@@ -70,7 +70,7 @@ def test_frequency_correction():
     print("Starting frequency correction test...")
     
     # 设置基本参数
-    fs = 20000  # 采样率
+    fs = (1024)*32  # 采样率
     f0 = 300    # 音频频率
     fc = 500      # 载波频率（基带信号）
     sym_bin = 6.25  # 符号频率间隔
@@ -98,11 +98,6 @@ def test_frequency_correction():
     fShift_k_Hzpsample = 568.0 / fs  # 频偏变化率
     print(f"Frequency drift rate: {fShift_k_Hzpsample} Hz/sample")
     
-    # 生成频移载波
-    t = np.arange(nsamples)
-    shift_carrier = np.exp(2j * np.pi * fShift_t0_Hz * t / fs + 
-                          2j * np.pi * fShift_k_Hzpsample * t**2 / (2 * fs))
-    
     # 直接生成复信号（基带信号）
     print("Directly generating FT8 baseband complex signal...")
     wave_complex = ft8_baseband_generator(test_payload, fs, f0)
@@ -110,13 +105,26 @@ def test_frequency_correction():
     # 将基带信号上变频到载波频率
     wave_complex = wave_complex * np.exp(1j * 2 * np.pi * fc * np.arange(len(wave_complex)) / fs)
 
+    # 对wave_complex前后补零，补零长度为信号本身长度
+    original_length = len(wave_complex)
+    print(f"Original signal length: {original_length}")
+    zeros_padding = np.zeros(original_length, dtype=complex)
+    wave_complex_padded = np.concatenate((zeros_padding, wave_complex, zeros_padding))
+    print(f"Padded signal length: {len(wave_complex_padded)}")
+    
+    # 更新采样点数量以匹配新的信号长度
+    nsamples = len(wave_complex_padded)
+    
     # 计算复信号的频谱图
     print("Calculating complex signal spectrogram...")
-    complex_spectrogram, f_complex, t_complex = calculate_spectrogram(wave_complex, fs, 2, 2)
-    save_spectrogram(complex_spectrogram, 'complex_signal_spectrogram.png', 'Complex Signal Spectrogram')
+    complex_spectrogram, f_complex, t_complex = calculate_spectrogram(wave_complex_padded, fs, 2, 2)
+    save_spectrogram(complex_spectrogram, 'complex_signal_spectrogram.png', 'Complex Signal Spectrogram (with Zero Padding)')
     
     # 应用频率漂移
-    wave_shifted = wave_complex * shift_carrier
+    t = np.arange(nsamples)
+    shift_carrier = np.exp(2j * np.pi * fShift_t0_Hz * t / fs + 
+                          2j * np.pi * fShift_k_Hzpsample * t**2 / (2 * fs))
+    wave_shifted = wave_complex_padded * shift_carrier
     
     # 绘制偏移载波的频谱图
     print("Calculating shifted carrier spectrogram...")
@@ -132,15 +140,24 @@ def test_frequency_correction():
 
     # 添加高斯噪声
     print("Adding Gaussian noise...")
-    SNR = -5  # 信噪比(dB)
+    Es_N0_dB = 30  # 信号比上噪声频谱密度(dB)
     
-    wave_power = np.mean(np.abs(wave_shifted)**2)
-    noise_power = wave_power / (10**(SNR/10))
-    print(f"Signal power: {wave_power}, Noise power: {noise_power}, SNR: {SNR} dB")
+    # 计算信号能量
+    signal_energy = np.sum(np.abs(wave_shifted)**2) / len(wave_shifted)
+    
+    # 根据Es/N0计算噪声功率谱密度
+    N0 = signal_energy / (10**(Es_N0_dB/10))
+    
+    # 计算噪声功率，考虑采样率影响
+    # 在复信号中，噪声功率为 N0 * fs / 2
+    noise_power = N0 * fs
+    print(f"Signal energy: {signal_energy}, Noise power spectral density (N0): {N0}, Es/N0: {Es_N0_dB} dB")
+    print(f"Sampling rate: {fs} Hz, Calculated noise power: {noise_power}")
     
     # 生成复高斯噪声
-    noise_real = np.random.normal(0, np.sqrt(noise_power/2), nsamples)
-    noise_imag = np.random.normal(0, np.sqrt(noise_power/2), nsamples)
+    noise_std = np.sqrt(noise_power/2)  # 复噪声的实部和虚部标准差
+    noise_real = np.random.normal(0, noise_std, nsamples)
+    noise_imag = np.random.normal(0, noise_std, nsamples)
     noise_complex = noise_real + 1j * noise_imag
     
     # 添加噪声到信号
@@ -194,7 +211,7 @@ def test_frequency_correction():
     corrected_spectrogram_positive = corrected_spectrogram[positive_freq_mask]
     f_positive = f[positive_freq_mask]
     
-    save_spectrogram(corrected_spectrogram_positive, 'corrected_spectrogram.png', 'Frequency Corrected Signal Spectrogram')
+    save_spectrogram(corrected_spectrogram_positive, 'corrected_spectrogram.png', 'Frequency Corrected Signal Spectrogram (Zero Padded)')
     
     # 解码校正后的信号 - 使用实部进行解码
     print("Decoding corrected signal...")

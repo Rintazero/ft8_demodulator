@@ -357,53 +357,10 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     # 查找候选信号
     candidates = ft8_find_candidates(wf, max_candidates, min_score)
     
-    plt.figure(figsize=(12, 8))
-    
-    # 收集所有有效的时间点，包括负值
-    all_time_points = []
-    candidate_points = []
-    for cand in candidates:
-        t_idx = cand.abs_time // wf.time_osr
-        if t_idx < len(t):  # 只检查上界
-            t_start = t[max(0, t_idx)]  # 使用t[0]作为最小值
-            if t_idx < 0:  # 如果是负时间，使用线性外推
-                t_start = t[0] + t_idx * (t[1] - t[0])  # 假设时间间隔均匀
-            f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
-            
-            # 检查时间范围限制
-            if time_min is not None and t_start < time_min:
-                continue
-            if time_max is not None and t_start > time_max:
-                continue
-                
-            all_time_points.append(t_start)
-            candidate_points.append((t_start, f_start))
-    
-    # 确定实际的时间范围
-    min_time = max(min(all_time_points) if all_time_points else t[0], t[0])
-    max_time = min(max(all_time_points) if all_time_points else t[-1], t[-1])
-    
-    # 创建掩码数组，将t<0的部分设为透明
-    mask = np.ones_like(spectrogram)
-    time_points = np.linspace(min_time, max_time, spectrogram.shape[1])
-    mask[:, time_points < 0] = np.nan
-    
-    # Plot spectrogram with adjusted time range and mask
-    plt.imshow(spectrogram * mask, aspect='auto', origin='lower', 
-               extent=[min_time, max_time, f[0], f[-1]],
-               cmap='viridis')
-    
-    plt.colorbar(label='Signal Strength (dB)')
-    plt.title('FT8 Spectrogram with Candidate Positions')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Frequency (Hz)')
-
-    # 标记所有候选点
-    for t_start, f_start in candidate_points:
-        plt.plot(t_start, f_start, '+', color='red', markersize=8)
-
-    plt.savefig('ft8_candidates.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    # for cand in candidates:
+    #     print(f"Candidate score: {cand.score}")
+    #     print(f"Candidate abs_time: {cand.abs_time}")
+    #     print(f"Candidate abs_freq: {cand.abs_freq}")
 
     # 解码候选信号
     results = []
@@ -424,5 +381,3 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     
     print(f"Decoded messages: {results}")
     return results
-
-

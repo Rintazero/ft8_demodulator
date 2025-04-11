@@ -5,6 +5,7 @@ from scipy import stats
 from scipy.interpolate import interp1d
 from sklearn.linear_model import LinearRegression
 from ..ft8_demodulator.ftx_types import FT8Waterfall
+from sklearn.preprocessing import PolynomialFeatures
 
 # 设置matplotlib字体设置
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # 使用DejaVu Sans以获得更好的兼容性
@@ -79,20 +80,12 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 从waterfall中获取频谱图数据
     sx_filtered_db = waterfall.mag
     
+
+    
     # 计算最大幅度频率-时间序列
-    window_sum = np.zeros(sx_filtered_db.shape)
-    for i in range(sx_filtered_db.shape[0]):
-        for j in range(sx_filtered_db.shape[1]):
-            if i < sx_filtered_db.shape[0] - freq_osr:
-                window_sum[i][j] = np.sum(sx_filtered_db[i:i+freq_osr, j])
-            else:
-                window_sum[i][j] = np.sum(sx_filtered_db[i:, j])
-                
-    window_indices = np.argmax(window_sum, axis=0)
-    max_freq_indices = np.zeros(sx_filtered_db.shape[1])
+    max_freq_indices = np.zeros(sx_filtered_db.shape[1], dtype=int)
     for i in range(sx_filtered_db.shape[1]):
-        max_freq_indices[i] = window_indices[i] + np.argmax(sx_filtered_db[window_indices[i]:window_indices[i]+freq_osr, i])
-    max_freq_indices = max_freq_indices.astype(int)
+        max_freq_indices[i] = np.argmax(sx_filtered_db[:, i])
 
     # 计算实际频率
     freq_step = sym_bin / freq_osr
@@ -126,6 +119,18 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 更新最大频率
     max_freqs = max_freq_indices * freq_step
 
+    # 绘制最大频率序列
+    plt.figure(figsize=(10, 6))
+    plt.plot(max_freqs, label='最大频率序列')
+    plt.xlabel('时间块索引')
+    plt.ylabel('频率 (Hz)')
+    plt.title('最大频率序列')
+    plt.grid(True)
+    plt.legend()
+    plt.savefig('max_freqs.png')
+    plt.show()
+    plt.close()
+
     # 构造同步序列
     sync_seq = (np.array([3, 1, 4, 0, 6, 5, 2]) + 1)
     sync_seq = sync_seq - np.mean(sync_seq)
@@ -153,8 +158,21 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 相关计算
     sync_correlation = np.correlate(max_freqs, three_sync_correlation_seq, mode='full')
 
+    plt.figure(figsize=(10, 6))
+    plt.plot(sync_correlation)
+    plt.savefig('sync_correlation.png')
+    plt.show()
+    plt.close()
+
     # TODO: 这里需要优化，因为同步序列相关波形在同步序列结束后的值会影响相关峰值的检测
     sync_correlation[:len(three_sync_correlation_seq) -1] = 0
+
+    sync_correlation_after_zero = sync_correlation[len(three_sync_correlation_seq) - 1:]
+    plt.figure(figsize=(10, 6))
+    plt.plot(sync_correlation_after_zero)
+    plt.savefig('sync_correlation_after_zero.png')
+    plt.show()
+    plt.close()
 
     correlation_peak_index = np.argmax(sync_correlation)
     correlation_peak_time_block_index = correlation_peak_index - (len(three_sync_correlation_seq) - 1) + samples_per_sym//2
@@ -171,15 +189,57 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         regression_y = np.append(regression_y, max_freqs[start_idx:min(end_idx, len(max_freqs))])
 
     regression_x = regression_x.reshape(-1, 1)
+    # 创建二次多项式特征
+    poly = PolynomialFeatures(degree=2)
+    X_poly = poly.fit_transform(regression_x)
+    
+    # 使用多项式特征进行回归
     model = LinearRegression()
-    model.fit(regression_x, regression_y)
-    f_shift_est_k_hz_ps = model.coef_[0]  # 估计的频率漂移率 (Hz/s)
+    model.fit(X_poly, regression_y)
+    
+    # 获取二次项系数（频率漂移加速度）和一次项系数（频率漂移率）
+    f_shift_acc = model.coef_[2]  # 二次项系数 (Hz/s²)
+    f_shift_rate = model.coef_[1]  # 一次项系数 (Hz/s)
+    f_shift_est_k_hz_ps = model.coef_[1]  # 保持与原代码兼容的返回值
+    
+    # 绘制拟合曲线和原始数据点
+    if True:
+        plt.figure(figsize=(10, 6))
+        # 绘制原始数据点
+        plt.scatter(regression_x, regression_y, color='blue', label='原始数据点')
+        
+        # 生成平滑曲线用的x值
+        x_smooth = np.linspace(regression_x.min(), regression_x.max(), 100).reshape(-1, 1)
+        x_smooth_poly = poly.transform(x_smooth)
+        
+        # 计算拟合曲线的y值
+        y_smooth = model.predict(x_smooth_poly)
+        
+        # 绘制拟合曲线
+        plt.plot(x_smooth, y_smooth, color='red', label='二次多项式拟合')
+        
+        # 添加标签和标题
+        plt.xlabel('时间 (秒)')
+        plt.ylabel('频率 (Hz)')
+        plt.title('频率漂移二次拟合')
+        plt.legend()
+        plt.grid(True)
+        
+        # 显示拟合参数
+        equation = f'拟合方程: f(t) = {f_shift_acc:.2f}t² + {f_shift_rate:.2f}t + {model.intercept_:.2f}'
+        plt.figtext(0.5, 0.01, equation, ha='center', fontsize=12)
+        
+        # 保存图像
+        plt.savefig('frequency_drift_fitting.png')
+        plt.close()
     
     # 转换为每个采样点的频率漂移率
     f_shift_est_k_hz_psample = f_shift_est_k_hz_ps / fs
+    f_shift_est_k_hz_psample_acc = f_shift_acc / fs**2
 
+    array_range = np.arange(nsamples)
     # 频率偏移补偿
-    compensation_carrier = np.exp(-2j*np.pi*f_shift_est_k_hz_psample*np.arange(nsamples)**2/(2*fs))
+    compensation_carrier = np.exp(-2j*np.pi*(f_shift_est_k_hz_psample*array_range**2+f_shift_est_k_hz_psample_acc*array_range**3)/(2*fs))
     wave_compensated = wave_complex * compensation_carrier
 
     return wave_compensated, f_shift_est_k_hz_psample
