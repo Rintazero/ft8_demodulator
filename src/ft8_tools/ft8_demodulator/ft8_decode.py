@@ -107,6 +107,8 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
     # 修正搜索范围计算，确保不会越界
     time_range = range(-10 * wf.time_osr, wf.num_blocks * wf.time_osr - wf.time_osr * (FT8_ND+1))
     freq_range = range(0, wf.mag.shape[0] - (num_tones - 1) * wf.freq_osr)
+    print("time_range:", time_range)
+    print("freq_range:", freq_range)
     
     score_list = []
     for abs_time in time_range:
@@ -346,9 +348,7 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     plt.title('FT8 Signal Spectrogram')
     plt.xlabel('Time (s)')
     plt.ylabel('Frequency (Hz)')
-    plt.savefig('ft8_spectrogram.png')
-    plt.close()
-
+    
     # 创建瀑布数据结构
     wf = create_waterfall_from_spectrogram(
         spectrogram, steps_per_symbol, bins_per_tone
@@ -357,11 +357,28 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     # 查找候选信号
     candidates = ft8_find_candidates(wf, max_candidates, min_score)
     
-    # for cand in candidates:
-    #     print(f"Candidate score: {cand.score}")
-    #     print(f"Candidate abs_time: {cand.abs_time}")
-    #     print(f"Candidate abs_freq: {cand.abs_freq}")
-
+    # 标注候选点
+    for i, cand in enumerate(candidates):
+        # 计算候选点在时间和频率轴上的实际位置，不除以过采样率
+        # 直接将候选点的索引映射到物理单位范围
+        time_sec = t[0] + (cand.abs_time * (t[-1] - t[0])) / (wf.num_blocks * wf.time_osr)
+        freq_hz = f[0] + (cand.abs_freq * (f[-1] - f[0])) / (wf.mag.shape[0])
+        
+        # 在频谱图上标注候选点
+        plt.plot(time_sec, freq_hz, 'ro', markersize=4)
+        # 添加标签，显示候选点的编号和分数
+        plt.annotate(f"{i+1}:{cand.score:.1f}", 
+                     (time_sec, freq_hz), 
+                     xytext=(5, 5), 
+                     textcoords='offset points',
+                     color='white',
+                     fontsize=8,
+                     bbox=dict(boxstyle="round,pad=0.3", fc="red", alpha=0.7))
+    
+    plt.show()
+    plt.savefig('ft8_spectrogram_with_candidates.png')
+    plt.close()
+    
     # 解码候选信号
     results = []
     for cand in candidates:

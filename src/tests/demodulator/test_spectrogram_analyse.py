@@ -105,7 +105,7 @@ def test_decode_ft8_message():
         fc=fc
     )
 
-    snr_db = -10  # Define the desired signal-to-noise ratio in decibels
+    snr_db = 10  # Define the desired signal-to-noise ratio in decibels
     signal_power = np.mean(wave_data**2)  # Calculate the signal power
     noise_power = signal_power / (10**(snr_db / 10))  # Calculate the noise power based on SNR
     noise = np.sqrt(noise_power) * np.random.randn(len(wave_data))  # Generate noise
@@ -204,4 +204,3 @@ if __name__ == "__main__":
 
 
     print("All tests completed!")
-
