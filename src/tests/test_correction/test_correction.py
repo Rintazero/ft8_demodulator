@@ -78,7 +78,7 @@ def test_frequency_correction():
     
     
     # 测试载荷
-    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
+    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8)
     
     # 生成测试波形数据 - 实信号
     print("Generating FT8 real signal...")
@@ -140,7 +140,8 @@ def test_frequency_correction():
 
     # 添加高斯噪声
     print("Adding Gaussian noise...")
-    Es_N0_dB = 30  # 信号比上噪声频谱密度(dB)
+    # 界限在 20 - 30 左右
+    Es_N0_dB = 40  # 信号比上噪声频谱密度(dB)
     
     # 计算信号能量
     signal_energy = np.sum(np.abs(wave_shifted)**2) / len(wave_shifted)
@@ -165,13 +166,14 @@ def test_frequency_correction():
     
     # 计算带噪声信号的频谱图 - 使用实部进行频谱图计算
     print("Calculating noisy signal spectrogram...")
-    orig_spectrogram, f, t = calculate_spectrogram(np.real(wave_noisy), fs, 2, 2)
+    orig_spectrogram, f, t = calculate_spectrogram(wave_noisy, fs, 2, 2)
     
     # 只保留正频率部分（单边带）
     positive_freq_mask = f >= 0
     orig_spectrogram_positive = orig_spectrogram[positive_freq_mask]
     f_positive = f[positive_freq_mask]
     
+    print("orig_spectrogram_positive:", orig_spectrogram_positive.shape)
     save_spectrogram(orig_spectrogram_positive, 'original_noisy_spectrogram.png', 'Original Noisy Signal with Frequency Drift')
     
     # 创建FT8Waterfall对象
@@ -193,8 +195,7 @@ def test_frequency_correction():
             'nsync_sym': 7,
             'ndata_sym': 58,
             'zscore_threshold': 5,
-            'max_iteration_num': 400000,
-            'debug_plots': False
+            'max_iteration_num': 400000
         }
     )
     
@@ -220,9 +221,14 @@ def test_frequency_correction():
         sample_rate=fs,
         bins_per_tone=2,
         steps_per_symbol=2,
-        max_candidates=20,
-        min_score=5,
-        max_iterations=20
+        max_candidates=100,
+        min_score=6,
+        max_iterations=40,
+        # 限制解码范围，用于加快测试
+        freq_min=0,  # 最小频率限制 (Hz)
+        freq_max=1500,  # 最大频率限制 (Hz)
+        time_min=10,  # 最小时间限制 (秒)
+        time_max=None   # 最大时间限制 (秒)
     )
     
     print(f"Number of decode results after frequency correction: {len(results_after_correction)}")
