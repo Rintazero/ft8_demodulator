@@ -2,9 +2,11 @@ import numpy as np
 import scipy as sci
 import matplotlib.pyplot as plt
 
-FT8_BAUD_RATE = 6.25 # symbols per second
-FT8_SYMBOL_DURATION_S = 0.16  # 每个符号的持续时间（秒）
-FT8_SYMBOL_FREQ_INTERVAL_HZ = 6.25  # 符号间的频率间隔（Hz）
+
+FT8_SYMBOL_DURATION_S = 0.16 / 1 # 每个符号的持续时间（秒）
+FT8_SYMBOL_FREQ_INTERVAL_HZ = 6.25 * 1  # 符号间的频率间隔（Hz）
+
+FT8_BAUD_RATE = 1 / FT8_SYMBOL_DURATION_S # symbols per second
 
 SPECTROGRAM_BINS_PER_TONE = 10
 SPECTROGRAM_STEPS_PER_SYMBOL = 10

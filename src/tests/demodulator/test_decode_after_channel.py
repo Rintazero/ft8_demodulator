@@ -20,6 +20,28 @@ from ft8_tools.ft8_demodulator.ft8_decode import (
 
 workspace_path = "./src/tests/channel/doppler_shift_test"
 
+
+
+import scipy
+import matplotlib.pyplot as plt
+from scipy import stats
+from scipy.interpolate import interp1d
+def gfsk_pulse(bt, t):
+    """
+    生成GFSK脉冲
+    
+    参数:
+    bt: 带宽时间乘积
+    t: 时间序列
+    
+    返回:
+    output: GFSK脉冲
+    """
+    k = np.pi * np.sqrt(2.0/np.log(2.0))
+    output = 0.5 * (scipy.special.erf(k*bt*(t+0.5)) - scipy.special.erf(k*bt*(t-0.5)))
+    return output
+
+
 # 加载信号
 down_sampled_signal_path = os.path.join(workspace_path, 'down_sampled_signal.npy')
 if not os.path.exists(down_sampled_signal_path):
@@ -68,7 +90,7 @@ plt.colorbar(label='Intensity (dB)')
 plt.show()
 
 ## signal detection
-__detection_method__ = 'time_domain_correlation'
+__detection_method__ = 'time_domain_correlation_with_gfsk'
 
 if __detection_method__ == 'time_domain_correlation':
     ### Calculate maximum amplitude frequency-time sequence
@@ -123,17 +145,73 @@ if __detection_method__ == 'time_domain_correlation':
     ### 计算同步序列相关峰值
     syncCorrelationPeak = np.max(syncCorrelation)
 
+if __detection_method__ == 'time_domain_correlation_with_gfsk':
+    ### Calculate maximum amplitude frequency-time sequence
+    windowSum = np.zeros(spectrogram.shape)
+    for i in range(spectrogram.shape[0]):
+        for j in range(spectrogram.shape[1]):
+            if i < spectrogram.shape[0] - bins_per_tone:
+                windowSum[i][j] = np.sum(spectrogram[i:i+bins_per_tone,j])
+            else:
+                windowSum[i][j] = np.sum(spectrogram[i:,j])
+    windowIndices = np.argmax(windowSum, axis=0)
+    max_freq_indices = np.zeros(spectrogram.shape[1])
+    for i in range(spectrogram.shape[1]):
+        max_freq_indices[i] = windowIndices[i] + np.argmax(spectrogram[windowIndices[i]:windowIndices[i]+bins_per_tone,i])
+    max_freq_indices = max_freq_indices.astype(int)
+    max_freqs = f[max_freq_indices]
+
+       # 构造同步序列
+    sync_seq = (np.array([3, 1, 4, 0, 6, 5, 2]) + 1)
+    sync_seq = sync_seq - np.mean(sync_seq)
+
+    # 每个符号的GFSK脉冲整形
+    samples_per_sym = steps_per_symbol * 2
+    t_pulse = np.linspace(-1, 1, samples_per_sym+1)
+    gfsk_shape = gfsk_pulse(bt=2.0, t=t_pulse)
+
+    # 扩展同步序列长度以适应整形脉冲
+    sync_correlation_seq = np.zeros((7-1) * steps_per_symbol + samples_per_sym + 1)
+
+    # 对每个同步符号进行脉冲整形
+    for sym_idx in range(7):
+        sync_correlation_seq[sym_idx * steps_per_symbol:(sym_idx * steps_per_symbol) + samples_per_sym + 1] += gfsk_shape * sync_seq[sym_idx]
+
+    # 创建三个同步序列
+    three_sync_correlation_seq = np.zeros((3*7 + 58 - 1) * steps_per_symbol + 1 + samples_per_sym)
+
+    for i in range(3):
+        start_idx = i*(7+58//2)*steps_per_symbol
+        end_idx = start_idx + len(sync_correlation_seq)
+        three_sync_correlation_seq[start_idx:end_idx] = sync_correlation_seq
+    
+    ### 计算同步块相关
+    # syncCorrelation = np.correlate(max_freqs, three_sync_correlation_seq, mode='full')
+    ### 计算同步块相关
+    syncCorrelation = np.correlate(max_freqs, three_sync_correlation_seq, mode='full')
+
+    ### 绘制同步块相关
+    plt.figure(num=1, figsize=(10, 6))
+    plt.plot(np.linspace(0, t[-1], len(syncCorrelation)), syncCorrelation, marker='o', linestyle='-', color='blue', label='Sync Correlation')
+    plt.title('Sync Correlation')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Correlation')
+    plt.grid(True)
+    plt.legend()
+    # plt.savefig('sync_correlation.png')
+    plt.show()
+
 if __detection_method__ == 'time_frequency_block_correlation':
-    ### 构造同步块
+
+    ### 构造同步序列
     SyncSymSeq = (np.array([3,1,4,0,6,5,2]))
     SyncSymSeq = SyncSymSeq - np.mean(SyncSymSeq)
-    tSyncSeq = np.zeros(len(SyncSymSeq) * steps_per_symbol)
+    SyncSeq = np.zeros(len(SyncSymSeq) * steps_per_symbol)
     for i in range(len(SyncSymSeq)):
-        tSyncSeq[i*steps_per_symbol] = SyncSymSeq[i]
-        tSyncSeq[i*steps_per_symbol+1] = SyncSymSeq[i]
+        SyncSeq[i*steps_per_symbol] = SyncSymSeq[i]
+        SyncSeq[i*steps_per_symbol+1] = SyncSymSeq[i]
 
-    ### 计算同步块相关
-    syncCorrelation = np.correlate(max_freqs, tSyncSeq, mode='full')
+    
 
     ### 绘制同步块相关
     plt.figure(num=1, figsize=(10, 6))

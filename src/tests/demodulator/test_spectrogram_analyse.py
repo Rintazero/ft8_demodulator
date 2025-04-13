@@ -92,8 +92,8 @@ def verify_decode_results(results: list) -> None:
 def test_decode_ft8_message():
     """Test FT8 message decoding functionality"""
     # Set basic parameters
-    fs = 1000  # Sample rate
-    f0 = 300    # Audio frequency !!!!!This One!!!!!
+    fs = 6000  # Sample rate
+    f0 = 0    # Audio frequency !!!!!This One!!!!!
     fc = 0      # Carrier frequency (baseband signal)
     test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8)
     
@@ -105,7 +105,7 @@ def test_decode_ft8_message():
         fc=fc
     )
 
-    snr_db = -10  # Define the desired signal-to-noise ratio in decibels
+    snr_db = 0  # Define the desired signal-to-noise ratio in decibels
     signal_power = np.mean(wave_data**2)  # Calculate the signal power
     noise_power = signal_power / (10**(snr_db / 10))  # Calculate the noise power based on SNR
     noise = np.sqrt(noise_power) * np.random.randn(len(wave_data))  # Generate noise

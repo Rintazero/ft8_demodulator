@@ -6,8 +6,8 @@ from . import encoder
 from numpy.typing import NDArray
 from .encoder import FT8_SYMBOL_NUM
 
-FT8_SYMBOL_TIME_S = 0.16 # 符号时间
-FT8_SYMBOL_FREQ_INTERVAL_HZ = 6.25 # 符号频率间隔
+FT8_SYMBOL_TIME_S = 0.16 / 1 # 符号时间
+FT8_SYMBOL_FREQ_INTERVAL_HZ = 6.25 * 1 # 符号频率间隔
 
 # SAMPLE_RATE_HZ = 10e3 # 采样率
 # CENTER_FREQ_HZ = 550 # 中心频率
