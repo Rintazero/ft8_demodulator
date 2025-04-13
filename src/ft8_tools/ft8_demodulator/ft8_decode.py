@@ -105,7 +105,8 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
     num_tones = 8  # FT8使用8-FSK调制
     
     # 修正搜索范围计算，确保不会越界
-    time_range = range(-10 * wf.time_osr, wf.num_blocks * wf.time_osr - wf.time_osr * (FT8_ND+1))
+    print(f"wf.mag.shape: {wf.mag.shape}")
+    time_range = range(-10 * wf.time_osr, wf.mag.shape[1] - wf.time_osr * (FT8_ND+1))
     freq_range = range(0, wf.mag.shape[0] - (num_tones - 1) * wf.freq_osr)
     print("time_range:", time_range)
     print("freq_range:", freq_range)

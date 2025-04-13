@@ -132,18 +132,121 @@ def estimate_frequency_drift(max_freqs, time_axis, signal_segment, poly_degree=2
     model.fit(X_poly, seg_freq)
     
     # 获取系数
-    coeffs = model.coef_
-    intercept = model.intercept_
+    intercept = model.intercept_  # 截距是标量
+    coefs = model.coef_  # 多项式系数
+    
+    # 确保系数是一维数组
+    if coefs.ndim > 1:
+        coefs = coefs[0]
     
     # 获取多项式各项系数
-    if len(coeffs) > 2:  # 二次多项式
-        f_shift_acc = coeffs[2]  # 二次项系数 (Hz/s²)
-        f_shift_rate = coeffs[1]  # 一次项系数 (Hz/s)
+    if len(coefs) > 2:  # 二次多项式
+        f_shift_acc = coefs[2]  # 二次项系数 (Hz/s²)
+        f_shift_rate = coefs[1]  # 一次项系数 (Hz/s)
     else:  # 线性多项式
         f_shift_acc = 0
-        f_shift_rate = coeffs[1] if len(coeffs) > 1 else 0
+        f_shift_rate = coefs[1] if len(coefs) > 1 else 0
     
-    return f_shift_rate, f_shift_acc, (poly, model)
+    # 绘制频率漂移拟合结果
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        
+        # 绘制原始数据点
+        plt.scatter(seg_time, seg_freq, color='blue', label='Signal Frequency Points')
+        
+        # 生成平滑曲线用的x值
+        x_smooth = np.linspace(seg_time.min(), seg_time.max(), 100).reshape(-1, 1)
+        x_smooth_poly = poly.transform(x_smooth)
+        
+        # 计算拟合曲线的y值
+        y_smooth = model.predict(x_smooth_poly)
+        
+        # 绘制拟合曲线
+        plt.plot(x_smooth, y_smooth, color='red', label='Polynomial Fit')
+        
+        # 添加标签和标题
+        plt.xlabel('Time (s)')
+        plt.ylabel('Frequency (Hz)')
+        plt.title('Frequency Drift Fitting')
+        plt.legend()
+        plt.grid(True)
+        
+        # 显示拟合参数
+        equation = f'Fit: f(t) = '
+        if f_shift_acc != 0:
+            equation += f'{f_shift_acc:.4f}t^2 + '
+        equation += f'{f_shift_rate:.4f}t + {intercept:.2f}'
+        
+        plt.figtext(0.5, 0.01, equation, ha='center', fontsize=12)
+        plt.figtext(0.5, 0.04, f'Drift Rate: {f_shift_rate:.4f} Hz/s, Accel: {f_shift_acc:.6f} Hz/s^2', ha='center', fontsize=12)
+        
+        # 保存图像
+        plt.savefig('frequency_drift_fitting_new.png')
+        plt.close()
+    
+    # 使用拟合模型直接预测频率偏移
+    # 为每个样本点创建时间序列（秒）
+    sample_time = np.arange(nsamples) / fs
+    sample_time = sample_time.reshape(-1, 1)
+    
+    # 将时间序列转化为多项式特征
+    sample_time_poly = poly.transform(sample_time)
+    
+    # 使用模型预测每个时间点的频率
+    predicted_frequencies = model.predict(sample_time_poly)
+    
+    # 计算相位补偿：-2π * ∫f(t)dt
+    # 使用多项式积分的解析解
+    # 假设多项式模型为 a0 + a1*t + a2*t^2 + ...
+    # 其积分为 a0*t + a1*t^2/2 + a2*t^3/3 + ...
+    
+    # 计算积分后的多项式系数
+    # 常数项变为一次项，一次项变为二次项，以此类推
+    integrated_coefs = np.zeros(len(coefs) + 1)
+    integrated_coefs[0] = intercept  # 积分后的常数项为原截距
+    for i in range(len(coefs)):
+        integrated_coefs[i+1] = coefs[i] / (i+1)  # 除以对应的次数
+    
+    # 计算每个时间点的积分值
+    phase_values = np.zeros(nsamples)
+    for i in range(len(integrated_coefs)):
+        phase_values += integrated_coefs[i] * np.power(sample_time.flatten(), i)
+    
+    # 应用-2π因子获得相位补偿
+    phase_compensation = -2 * np.pi * phase_values
+    
+    # 生成补偿载波
+    compensation_carrier = np.exp(1j * phase_compensation)
+    
+    # 应用补偿
+    wave_compensated = wave_complex * compensation_carrier
+    
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        plt.plot(sample_time, predicted_frequencies, label='Predicted Frequency Drift')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Frequency (Hz)')
+        plt.title('Predicted Frequency Drift Across Entire Signal')
+        plt.grid(True)
+        plt.legend()
+        plt.savefig('predicted_frequency_drift.png')
+        plt.close()
+        
+        plt.figure(figsize=(10, 6))
+        plt.plot(sample_time, phase_compensation, label='Phase Compensation')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Phase (radians)')
+        plt.title('Phase Compensation Function')
+        plt.grid(True)
+        plt.legend()
+        plt.savefig('phase_compensation.png')
+        plt.close()
+        
+        print(f"Frequency drift rate: {f_shift_rate:.4f} Hz/s")
+        print(f"Frequency drift acceleration: {f_shift_acc:.6f} Hz/s^2")
+    
+    # 为了保持与原来接口兼容，仅返回线性项系数
+    return wave_compensated, f_shift_rate
 
 def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float, sym_t: float, waterfall: FT8Waterfall, params=None):
     """
@@ -164,6 +267,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         - window_size: 连续性分析的窗口大小 (默认: 8)
         - max_variance_factor: 残差方差阈值的因子 (默认: 0.0001)
           实际max_variance = max_variance_factor * freq_bins²
+        - fit_middle_percent: 拟合时使用中间部分的百分比，头尾各去掉(100-fit_middle_percent)/2%
     
     返回:
     tuple: (校正后的信号, 估计的频率漂移率)
@@ -179,6 +283,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'debug_plots': True,
         'window_size': 8,
         'max_variance_factor': 0.0001,  # 方差因子，实际方差阈值将乘以频谱点数的平方
+        'fit_middle_percent': 90,  # 拟合时使用中间部分的百分比，头尾各去掉(100-fit_middle_percent)/2%
     }
     
     if params is None:
@@ -304,32 +409,61 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     seg_time = time_axis[start_idx:end_idx+1].reshape(-1, 1)
     seg_freq = max_freqs[start_idx:end_idx+1]
     
+    # 只使用中间部分的点进行拟合
+    fit_middle_percent = params['fit_middle_percent']
+    if fit_middle_percent < 100:
+        trim_percent = (100 - fit_middle_percent) / 2 / 100  # 头尾各去掉的比例
+        seg_len = len(seg_time)
+        trim_points = int(seg_len * trim_percent)
+        
+        if trim_points > 0 and 2 * trim_points < seg_len:  # 确保有足够的点
+            # 截取中间部分
+            fit_start = trim_points
+            fit_end = seg_len - trim_points
+            seg_time_fit = seg_time[fit_start:fit_end]
+            seg_freq_fit = seg_freq[fit_start:fit_end]
+        else:
+            # 点数不足或参数错误，使用全部点
+            seg_time_fit = seg_time
+            seg_freq_fit = seg_freq
+    else:
+        seg_time_fit = seg_time
+        seg_freq_fit = seg_freq
+    
     # 创建多项式特征和拟合
-    poly = PolynomialFeatures(degree=2)
-    X_poly = poly.fit_transform(seg_time)
+    poly = PolynomialFeatures(degree=1)
+    X_poly = poly.fit_transform(seg_time_fit)
     
     # 多项式拟合
     model = LinearRegression()
-    model.fit(X_poly, seg_freq)
+    model.fit(X_poly, seg_freq_fit)
     
     # 获取系数
-    coeffs = model.coef_
-    intercept = model.intercept_
+    intercept = model.intercept_  # 截距是标量
+    coefs = model.coef_  # 多项式系数
+    
+    # 确保系数是一维数组
+    if coefs.ndim > 1:
+        coefs = coefs[0]
     
     # 获取多项式各项系数
-    if len(coeffs) > 2:  # 二次多项式
-        f_shift_acc = coeffs[2]  # 二次项系数 (Hz/s²)
-        f_shift_rate = coeffs[1]  # 一次项系数 (Hz/s)
+    if len(coefs) > 2:  # 二次多项式
+        f_shift_acc = coefs[2]  # 二次项系数 (Hz/s²)
+        f_shift_rate = coefs[1]  # 一次项系数 (Hz/s)
     else:  # 线性多项式
         f_shift_acc = 0
-        f_shift_rate = coeffs[1] if len(coeffs) > 1 else 0
+        f_shift_rate = coefs[1] if len(coefs) > 1 else 0
     
     # 绘制频率漂移拟合结果
     if debug_plots:
         plt.figure(figsize=(10, 6))
         
         # 绘制原始数据点
-        plt.scatter(seg_time, seg_freq, color='blue', label='Signal Frequency Points')
+        plt.scatter(seg_time, seg_freq, color='blue', label='Signal Frequency Points', alpha=0.3)
+        
+        # 标记用于拟合的点
+        if fit_middle_percent < 100:
+            plt.scatter(seg_time_fit, seg_freq_fit, color='green', label='Points Used for Fitting')
         
         # 生成平滑曲线用的x值
         x_smooth = np.linspace(seg_time.min(), seg_time.max(), 100).reshape(-1, 1)
@@ -369,44 +503,40 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 将时间序列转化为多项式特征
     sample_time_poly = poly.transform(sample_time)
     
-    # 使用模型预测每个时间点的频率
-    predicted_frequencies = model.predict(sample_time_poly)
+
+    f_shift_est_k_hz_ps = model.coef_[1]  # 估计的频率漂移率 (Hz/s)
     
-    # 计算相位补偿：-2π * ∫f(t)dt
-    # 由于我们已经有了每个时间点的预测频率，可以用积分方法计算相位
-    # 使用累积梯形积分法
-    dt = 1/fs
-    phase_compensation = -2 * np.pi * np.cumsum(predicted_frequencies) * dt
-    
-    # 生成补偿载波
-    compensation_carrier = np.exp(1j * phase_compensation)
-    
+    # 转换为每个采样点的频率漂移率
+    f_shift_est_k_hz_psample = f_shift_est_k_hz_ps / fs
+    compensation_carrier = np.exp(-2j*np.pi*f_shift_est_k_hz_psample*np.arange(nsamples)**2/(2*fs))
+
+
     # 应用补偿
     wave_compensated = wave_complex * compensation_carrier
     
-    if debug_plots:
-        plt.figure(figsize=(10, 6))
-        plt.plot(sample_time, predicted_frequencies, label='Predicted Frequency Drift')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
-        plt.title('Predicted Frequency Drift Across Entire Signal')
-        plt.grid(True)
-        plt.legend()
-        plt.savefig('predicted_frequency_drift.png')
-        plt.close()
+    # if debug_plots:
+    #     plt.figure(figsize=(10, 6))
+    #     plt.plot(sample_time, predicted_frequencies, label='Predicted Frequency Drift')
+    #     plt.xlabel('Time (s)')
+    #     plt.ylabel('Frequency (Hz)')
+    #     plt.title('Predicted Frequency Drift Across Entire Signal')
+    #     plt.grid(True)
+    #     plt.legend()
+    #     plt.savefig('predicted_frequency_drift.png')
+    #     plt.close()
         
-        plt.figure(figsize=(10, 6))
-        plt.plot(sample_time, phase_compensation, label='Phase Compensation')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Phase (radians)')
-        plt.title('Phase Compensation Function')
-        plt.grid(True)
-        plt.legend()
-        plt.savefig('phase_compensation.png')
-        plt.close()
+    #     plt.figure(figsize=(10, 6))
+    #     plt.plot(sample_time, phase_compensation, label='Phase Compensation')
+    #     plt.xlabel('Time (s)')
+    #     plt.ylabel('Phase (radians)')
+    #     plt.title('Phase Compensation Function')
+    #     plt.grid(True)
+    #     plt.legend()
+    #     plt.savefig('phase_compensation.png')
+    #     plt.close()
         
-        print(f"Frequency drift rate: {f_shift_rate:.4f} Hz/s")
-        print(f"Frequency drift acceleration: {f_shift_acc:.6f} Hz/s^2")
+    #     print(f"Frequency drift rate: {f_shift_rate:.4f} Hz/s")
+    #     print(f"Frequency drift acceleration: {f_shift_acc:.6f} Hz/s^2")
     
     # 为了保持与原来接口兼容，仅返回线性项系数
-    return wave_compensated, f_shift_rate
+    return wave_compensated, f_shift_est_k_hz_psample

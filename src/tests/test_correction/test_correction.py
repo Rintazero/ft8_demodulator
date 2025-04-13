@@ -78,7 +78,7 @@ def test_frequency_correction():
     
     
     # 测试载荷
-    test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8)
+    test_payload = np.array([0x2D, 0x8F, 0x4B, 0x9C, 0xA1, 0x15, 0xD3, 0xE7, 0x62, 0x38], dtype=np.uint8)
     
     # 生成测试波形数据 - 实信号
     print("Generating FT8 real signal...")
@@ -102,8 +102,22 @@ def test_frequency_correction():
     print("Directly generating FT8 baseband complex signal...")
     wave_complex = ft8_baseband_generator(test_payload, fs, f0)
     
+
+
+    
+    print(f"Number of decode results after frequency correction: {len(results_after_correction)}")
+    if results_after_correction:
+        print("Successfully decoded after frequency correction!")
+        verify_decode_results(results_after_correction)
+    else:
+        print("Failed to decode after frequency correction, may need to adjust parameters")
+  
+
     # 将基带信号上变频到载波频率
     wave_complex = wave_complex * np.exp(1j * 2 * np.pi * fc * np.arange(len(wave_complex)) / fs)
+
+
+    
 
     # 对wave_complex前后补零，补零长度为信号本身长度
     original_length = len(wave_complex)
@@ -223,9 +237,9 @@ def test_frequency_correction():
         steps_per_symbol=2,
         max_candidates=100,
         min_score=6,
-        max_iterations=20,
-        freq_min=0,  # 最小频率限制 (Hz)
-        freq_max=1500,  # 最大频率限制 (Hz)
+        max_iterations=100,
+        # freq_min=0,  # 最小频率限制 (Hz)
+        # freq_max=1500,  # 最大频率限制 (Hz)
         time_min=10,  # 最小时间限制 (秒)
         time_max=None   # 最大时间限制 (秒)
     )

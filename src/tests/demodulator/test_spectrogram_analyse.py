@@ -92,7 +92,7 @@ def verify_decode_results(results: list) -> None:
 def test_decode_ft8_message():
     """Test FT8 message decoding functionality"""
     # Set basic parameters
-    fs = 1000  # Sample rate
+    fs = 1024  # Sample rate
     f0 = 300    # Audio frequency !!!!!This One!!!!!
     fc = 0      # Carrier frequency (baseband signal)
     test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8)
@@ -187,6 +187,9 @@ def test_decode_edge_cases():
     # Test high sample rate
     test_payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x51], dtype=np.uint8)
     wave_data = ft8_generator(test_payload, fs=fs, f0=200, fc=0)
+    
+
+    
     
     high_fs_results = decode_ft8_message(
         wave_data=wave_data,
