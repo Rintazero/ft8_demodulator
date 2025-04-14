@@ -107,6 +107,8 @@ def ft8_find_candidates(wf: FT8Waterfall, num_candidates: int, min_score: int) -
     # 修正搜索范围计算，确保不会越界
     time_range = range(-10 * wf.time_osr, wf.num_blocks * wf.time_osr - wf.time_osr * (FT8_ND+1))
     freq_range = range(0, wf.mag.shape[0] - (num_tones - 1) * wf.freq_osr)
+    print("time_range:", time_range)
+    print("freq_range:", freq_range)
     
     score_list = []
     for abs_time in time_range:
@@ -346,9 +348,7 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     plt.title('FT8 Signal Spectrogram')
     plt.xlabel('Time (s)')
     plt.ylabel('Frequency (Hz)')
-    plt.savefig('ft8_spectrogram.png')
-    plt.close()
-
+    
     # 创建瀑布数据结构
     wf = create_waterfall_from_spectrogram(
         spectrogram, steps_per_symbol, bins_per_tone
@@ -357,54 +357,28 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     # 查找候选信号
     candidates = ft8_find_candidates(wf, max_candidates, min_score)
     
-    plt.figure(figsize=(12, 8))
+    # 标注候选点
+    for i, cand in enumerate(candidates):
+        # 计算候选点在时间和频率轴上的实际位置，不除以过采样率
+        # 直接将候选点的索引映射到物理单位范围
+        time_sec = t[0] + (cand.abs_time * (t[-1] - t[0])) / (wf.num_blocks * wf.time_osr)
+        freq_hz = f[0] + (cand.abs_freq * (f[-1] - f[0])) / (wf.mag.shape[0])
+        
+        # 在频谱图上标注候选点
+        plt.plot(time_sec, freq_hz, 'ro', markersize=4)
+        # 添加标签，显示候选点的编号和分数
+        plt.annotate(f"{i+1}:{cand.score:.1f}", 
+                     (time_sec, freq_hz), 
+                     xytext=(5, 5), 
+                     textcoords='offset points',
+                     color='white',
+                     fontsize=8,
+                     bbox=dict(boxstyle="round,pad=0.3", fc="red", alpha=0.7))
     
-    # 收集所有有效的时间点，包括负值
-    all_time_points = []
-    candidate_points = []
-    for cand in candidates:
-        t_idx = cand.abs_time // wf.time_osr
-        if t_idx < len(t):  # 只检查上界
-            t_start = t[max(0, t_idx)]  # 使用t[0]作为最小值
-            if t_idx < 0:  # 如果是负时间，使用线性外推
-                t_start = t[0] + t_idx * (t[1] - t[0])  # 假设时间间隔均匀
-            f_start = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
-            
-            # 检查时间范围限制
-            if time_min is not None and t_start < time_min:
-                continue
-            if time_max is not None and t_start > time_max:
-                continue
-                
-            all_time_points.append(t_start)
-            candidate_points.append((t_start, f_start))
-    
-    # 确定实际的时间范围
-    min_time = max(min(all_time_points) if all_time_points else t[0], t[0])
-    max_time = min(max(all_time_points) if all_time_points else t[-1], t[-1])
-    
-    # 创建掩码数组，将t<0的部分设为透明
-    mask = np.ones_like(spectrogram)
-    time_points = np.linspace(min_time, max_time, spectrogram.shape[1])
-    mask[:, time_points < 0] = np.nan
-    
-    # Plot spectrogram with adjusted time range and mask
-    plt.imshow(spectrogram * mask, aspect='auto', origin='lower', 
-               extent=[min_time, max_time, f[0], f[-1]],
-               cmap='viridis')
-    
-    plt.colorbar(label='Signal Strength (dB)')
-    plt.title('FT8 Spectrogram with Candidate Positions')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Frequency (Hz)')
-
-    # 标记所有候选点
-    for t_start, f_start in candidate_points:
-        plt.plot(t_start, f_start, '+', color='red', markersize=8)
-
-    plt.savefig('ft8_candidates.png', dpi=300, bbox_inches='tight')
+    # plt.show()
+    plt.savefig('ft8_spectrogram_with_candidates.png')
     plt.close()
-
+    
     # 解码候选信号
     results = []
     for cand in candidates:
@@ -413,16 +387,8 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
             time_sec = cand.abs_time / sample_rate
             freq_hz = (cand.abs_freq / wf.freq_osr) * FT8_SYMBOL_FREQ_INTERVAL_HZ
             
-            # 检查时间范围限制
-            if time_min is not None and time_sec < time_min:
-                continue
-            if time_max is not None and time_sec > time_max:
-                continue
-                
             score = cand.score
             results.append((message, status, time_sec, freq_hz, score))
     
     print(f"Decoded messages: {results}")
     return results
-
-

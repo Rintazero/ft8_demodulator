@@ -18,6 +18,17 @@ from ft8_tools.ft8_demodulator.ft8_decode import (
     FT8DecodeStatus,
 )
 
+from src.ft8_tools.ft8_demodulator.ftx_types import FT8Waterfall
+
+# 导入本地模块
+from src.ft8_tools.ft8_generator.modulator import ft8_generator, ft8_baseband_generator
+from src.ft8_tools.ft8_beacon_receiver.frequency_correction import correct_frequency_drift
+from src.ft8_tools.ft8_demodulator.spectrogram_analyse import (
+    calculate_spectrogram,
+    select_frequency_band,
+)
+
+
 workspace_path = "./src/tests/channel/doppler_shift_test"
 
 
@@ -88,6 +99,35 @@ plt.figure(figsize=(10, 6))
 plt.imshow(spectrogram, aspect='auto', origin='lower', extent=[0, t[-1], f[0], f[-1]])
 plt.colorbar(label='Intensity (dB)')
 plt.show()
+plt.savefig('spectrogram.png')
+
+
+# 创建FT8Waterfall对象
+waterfall = FT8Waterfall(
+    mag=spectrogram,
+    time_osr=2,
+    freq_osr=2
+)
+
+# 应用频率校正 - 直接使用复信号进行校正
+print("Applying frequency correction...")
+wave_corrected, estimated_drift_rate = correct_frequency_drift(
+    down_sampled_signal, 
+    fs_Hz, 
+    bins_per_tone, 
+    steps_per_symbol,
+    waterfall,
+    params={
+        'nsync_sym': 7,
+        'ndata_sym': 58,
+        'zscore_threshold': 5,
+        'max_iteration_num': 400000,
+        'debug_plots': False
+    }
+)
+
+print(f"Estimated frequency drift rate: {estimated_drift_rate} Hz/sample")
+
 
 ## signal detection
 __detection_method__ = 'time_domain_correlation_with_gfsk'
@@ -139,7 +179,7 @@ if __detection_method__ == 'time_domain_correlation':
     plt.ylabel('Correlation')
     plt.grid(True)
     plt.legend()
-    # plt.savefig('sync_correlation.png')
+    plt.savefig('sync_correlation.png')
     plt.show()
 
     ### 计算同步序列相关峰值
