@@ -67,23 +67,23 @@ def test_step(payload: np.ndarray, fs: int, f0: int, fc: int, snr_db: int) -> bo
     else:
         return False
 
-fs_start_hz = 1000
-fs_end_hz = 7000 + 500
+fs_start_hz = 2000
+fs_end_hz = 10000 + 500
 fs_step_hz = 500
 
-snr_db_start = -23
-snr_db_end = 0
-snr_db_step = 1
+snr_db_start = -21
+snr_db_end = -10
+snr_db_step = 0.2
 
-success_ratio_threshold = 0.9
-num_rounds_per_test_point = 10
+success_ratio_threshold = 0.5
+num_rounds_per_test_point = 20
 
 results = np.zeros((fs_end_hz - fs_start_hz) // fs_step_hz)
 results = results + 3
 fs_index = 0
 for fs in range(fs_start_hz, fs_end_hz, fs_step_hz):
     print(f"Testing fs: {fs} Hz")
-    for snr_db in range(snr_db_start, snr_db_end, snr_db_step):
+    for snr_db in np.arange(snr_db_start, snr_db_end, snr_db_step):
         print(f"    Testing snr_db: {snr_db} dB, @fs: {fs} Hz")
         success_count = 0
         fail_count = 0
@@ -109,16 +109,16 @@ frequencies = np.arange(fs_start_hz, fs_end_hz, fs_step_hz)
     
 # Plot the results
 plt.figure(figsize=(10, 6))
-plt.plot(frequencies, results, 'b-o', linewidth=2, markersize=8)
+plt.plot(frequencies/2, results, 'b-o', linewidth=2, markersize=8)
 plt.grid(True)
-plt.xlabel('Frequency (Hz)')
+plt.xlabel('Bandwidth (Hz)')
 plt.ylabel('SNR (dB)')
 plt.title('Minimum SNR Required for Successful Decoding')
-plt.xticks(frequencies)
+plt.xticks(frequencies/2)
 plt.yticks(np.arange(snr_db_start, snr_db_end + 1, 2))
     
 # Save the plot
-plt.savefig('snr_vs_frequency_20250411_1105.png')
+plt.savefig('snr_vs_frequency_20250417_1308.png')
 plt.close()
 plt.show()
 
