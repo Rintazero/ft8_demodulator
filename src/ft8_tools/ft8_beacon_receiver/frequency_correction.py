@@ -52,7 +52,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'nsync_sym': 7,
         'ndata_sym': 58,
         'zscore_threshold': 5,
-        'max_iteration_num': 400,
+        'max_iteration_num': 4000,
         'debug_plots': False
     }
     
@@ -70,7 +70,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     ndata_sym = params['ndata_sym']
     zscore_threshold = params['zscore_threshold']
     max_iteration_num = params['max_iteration_num']
-    debug_plots = params['debug_plots']
+    debug_plots = True
     
     # 信号长度
     nsamples = len(wave_complex)
@@ -80,23 +80,16 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     sx_filtered_db = waterfall.mag
     
     # 计算最大幅度频率-时间序列
-    window_sum = np.zeros(sx_filtered_db.shape)
-    for i in range(sx_filtered_db.shape[0]):
-        for j in range(sx_filtered_db.shape[1]):
-            if i < sx_filtered_db.shape[0] - freq_osr:
-                window_sum[i][j] = np.sum(sx_filtered_db[i:i+freq_osr, j])
-            else:
-                window_sum[i][j] = np.sum(sx_filtered_db[i:, j])
-                
-    window_indices = np.argmax(window_sum, axis=0)
-    max_freq_indices = np.zeros(sx_filtered_db.shape[1])
-    for i in range(sx_filtered_db.shape[1]):
-        max_freq_indices[i] = window_indices[i] + np.argmax(sx_filtered_db[window_indices[i]:window_indices[i]+freq_osr, i])
-    max_freq_indices = max_freq_indices.astype(int)
-
+    max_freq_indices = np.argmax(sx_filtered_db, axis=0)
+    
     # 计算实际频率
     freq_step = sym_bin / freq_osr
     max_freqs = max_freq_indices * freq_step
+    
+    # 保存去异常前的频率索引用于绘图
+    if debug_plots:
+        max_freq_indices_before = max_freq_indices.copy()
+    
     # 使用Z分数方法识别异常值
     iteration_num = 0
     outlier_indices = np.array([])
@@ -109,7 +102,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         
         residuals = max_freq_indices - max_freq_indices_fitted
         z_scores = np.abs(stats.zscore(residuals))
-        outlier_indices = np.where(z_scores > zscore_threshold)[0]
+        outlier_indices = np.where(z_scores > zscore_threshold/2)[0]
         outliers = max_freq_indices[outlier_indices]
 
         if len(outlier_indices) == 0 or iteration_num == max_iteration_num:
@@ -117,14 +110,61 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
 
         i = np.argmax(z_scores[outlier_indices])
         sx_filtered_db[outliers[i], outlier_indices[i]] = np.min(sx_filtered_db)
-        window_indices[outlier_indices[i]] = np.argmax(sx_filtered_db[:, outlier_indices[i]])
-        max_freq_indices[outlier_indices[i]] = window_indices[outlier_indices[i]] + np.argmax(
-            sx_filtered_db[window_indices[outlier_indices[i]]:window_indices[outlier_indices[i]]+freq_osr, outlier_indices[i]])
+        max_freq_indices[outlier_indices[i]] = np.argmax(sx_filtered_db[:, outlier_indices[i]])
 
         iteration_num += 1
 
     # 更新最大频率
     max_freqs = max_freq_indices * freq_step
+    
+    # 绘制去异常前后的对比图
+    if debug_plots:
+        # 时间轴，单位为秒
+        time_axis = np.arange(len(max_freq_indices)) * sym_t / time_osr
+        
+        # 计算去异常前后的实际频率
+        max_freqs_before = max_freq_indices_before * freq_step
+        max_freqs_after = max_freq_indices * freq_step
+        
+        # 计算去异常前后的线性回归
+        x_before = np.arange(len(max_freq_indices_before)).reshape(-1, 1)
+        model_before = LinearRegression()
+        model_before.fit(x_before, max_freq_indices_before)
+        max_freq_indices_fitted_before = model_before.predict(x_before)
+        max_freqs_fitted_before = max_freq_indices_fitted_before * freq_step
+        
+        x_after = np.arange(len(max_freq_indices)).reshape(-1, 1)
+        model_after = LinearRegression()
+        model_after.fit(x_after, max_freq_indices)
+        max_freq_indices_fitted_after = model_after.predict(x_after)
+        max_freqs_fitted_after = max_freq_indices_fitted_after * freq_step
+        
+        # 创建图像
+        plt.figure(figsize=(12, 8))
+        plt.subplot(2, 1, 1)
+        plt.scatter(time_axis, max_freqs_before, s=10, c='blue', alpha=0.7, label='Original Frequencies')
+        plt.plot(time_axis, max_freqs_fitted_before, 'r-', linewidth=2, label='Linear Fit')
+        if len(outlier_indices) > 0:
+            plt.scatter(time_axis[outlier_indices], max_freqs_before[outlier_indices], 
+                       s=80, facecolors='none', edgecolors='red', label='Detected Outliers')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Frequency (Hz)')
+        plt.title('Frequency-Time Curve Before Outlier Removal')
+        plt.legend()
+        plt.grid(True)
+        
+        plt.subplot(2, 1, 2)
+        plt.scatter(time_axis, max_freqs_after, s=10, c='green', alpha=0.7, label='Corrected Frequencies')
+        plt.plot(time_axis, max_freqs_fitted_after, 'r-', linewidth=2, label='Linear Fit')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Frequency (Hz)')
+        plt.title('Frequency-Time Curve After Outlier Removal')
+        plt.legend()
+        plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig('frequency_correction_before_after.png', dpi=150)
+        plt.show()
 
     # 构造同步序列
     sync_seq = (np.array([3, 1, 4, 0, 6, 5, 2]) + 1)

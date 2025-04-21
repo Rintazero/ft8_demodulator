@@ -132,7 +132,7 @@ def test_frequency_correction():
 
     # 添加高斯噪声
     print("Adding Gaussian noise...")
-    SNR = -5  # 信噪比(dB)
+    SNR = -15  # 信噪比(dB)
     
     wave_power = np.mean(np.abs(wave_shifted)**2)
     noise_power = wave_power / (10**(SNR/10))
