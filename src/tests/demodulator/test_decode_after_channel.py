@@ -17,21 +17,11 @@ from ft8_tools.ft8_demodulator.ft8_decode import (
     FT8Message,
     FT8DecodeStatus,
 )
-
-from src.ft8_tools.ft8_demodulator.ftx_types import FT8Waterfall
-
-# 导入本地模块
-from src.ft8_tools.ft8_generator.modulator import ft8_generator, ft8_baseband_generator
-from src.ft8_tools.ft8_beacon_receiver.frequency_correction import correct_frequency_drift
-from src.ft8_tools.ft8_demodulator.spectrogram_analyse import (
-    calculate_spectrogram,
-    select_frequency_band,
-)
-
+from ft8_tools.ft8_demodulator.ftx_types import FT8Waterfall
+from ft8_tools.ft8_generator.modulator import ft8_generator, ft8_baseband_generator
+from ft8_tools.ft8_beacon_receiver.frequency_correction import correct_frequency_drift
 
 workspace_path = "./src/tests/channel/doppler_shift_test"
-
-
 
 import scipy
 import matplotlib.pyplot as plt
@@ -116,7 +106,6 @@ wave_corrected, estimated_drift_rate = correct_frequency_drift(
     fs_Hz, 
     bins_per_tone, 
     steps_per_symbol,
-    waterfall,
     params={
         'nsync_sym': 7,
         'ndata_sym': 58,

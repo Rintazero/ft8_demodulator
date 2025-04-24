@@ -6,6 +6,8 @@ from scipy.interpolate import interp1d
 from sklearn.linear_model import LinearRegression
 from ..ft8_demodulator.ftx_types import FT8Waterfall
 from sklearn.preprocessing import PolynomialFeatures
+from ..ft8_demodulator.spectrogram_analyse import calculate_spectrogram
+from ..ft8_demodulator.ft8_decode import create_waterfall_from_spectrogram
 
 # 设置matplotlib字体设置
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # 使用DejaVu Sans以获得更好的兼容性
@@ -102,16 +104,15 @@ def detect_signal_continuity(max_freq_indices, window_size=8, max_variance=10.0)
     return signal_segments, continuity_metric
 
 
-def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float, sym_t: float, waterfall: FT8Waterfall, params=None):
+def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float, sym_t: float, params=None):
     """
     对FT8信号进行频率漂移校正
     
     参数:
-    wave_complex: 复数形式的输入信号
+    wave_complex: 复数形式的信号，注意，只会取正频率部分用作频谱图
     fs: 采样率
     sym_bin: 符号频率间隔
     sym_t: 符号时间长度
-    waterfall: FT8Waterfall对象，包含频谱图数据
     params: 可选参数字典，包含以下字段：
         - nsync_sym: 同步符号数量 (默认: 7)
         - ndata_sym: 数据符号数量 (默认: 58)
@@ -138,6 +139,8 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'window_size': 8,
         'max_variance_factor': 0.0001,  # 方差因子，实际方差阈值将乘以频谱点数的平方
         'fit_middle_percent': 100,  # 拟合时使用中间部分的百分比，头尾各去掉(100-fit_middle_percent)/2%
+        'bins_per_tone': 2,  # 每个音调的频率bin数量
+        'steps_per_symbol': 2,  # 每个符号的时间步数
     }
     
     if params is None:
@@ -152,14 +155,33 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     plt.rcParams['axes.unicode_minus'] = False
 
     # 基本变量
-    time_osr = waterfall.time_osr
-    freq_osr = waterfall.freq_osr
+    bins_per_tone = params['bins_per_tone']
+    steps_per_symbol = params['steps_per_symbol']
     debug_plots = params['debug_plots']
     
     # 信号长度
     nsamples = len(wave_complex)
     tlength = nsamples / fs
 
+    # 计算频谱图
+    sx_filtered_db, f, t = calculate_spectrogram(
+        wave_complex, fs, bins_per_tone, steps_per_symbol
+    )
+    
+    # 只保留正频率部分
+    positive_freq_mask = f >= 0
+    sx_filtered_db = sx_filtered_db[positive_freq_mask]
+    f = f[positive_freq_mask]
+    
+    # 创建FT8Waterfall对象
+    waterfall = create_waterfall_from_spectrogram(
+        sx_filtered_db, steps_per_symbol, bins_per_tone
+    )
+    
+    # 基本变量
+    time_osr = waterfall.time_osr
+    freq_osr = waterfall.freq_osr
+    
     # 从waterfall中获取频谱图数据
     sx_filtered_db = waterfall.mag
     

@@ -190,12 +190,13 @@ def test_frequency_correction():
         fs, 
         sym_bin, 
         sym_t,
-        waterfall,
         params={
             'nsync_sym': 7,
             'ndata_sym': 58,
             'zscore_threshold': 5,
-            'max_iteration_num': 400000
+            'max_iteration_num': 400000,
+            'bins_per_tone': 2,
+            'steps_per_symbol': 2
         }
     )
     
