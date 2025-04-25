@@ -213,6 +213,18 @@ def test_frequency_correction():
     corrected_spectrogram_positive = corrected_spectrogram[positive_freq_mask]
     f_positive = f[positive_freq_mask]
     
+    # 绘制校正后的频谱图
+    plt.figure(figsize=(12, 6))
+    plt.imshow(corrected_spectrogram_positive, aspect='auto', origin='lower', 
+               extent=[t[0], t[-1], f_positive[0], f_positive[-1]])
+    plt.colorbar(label='Magnitude (dB)')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Frequency (Hz)')
+    plt.title('Corrected Signal Spectrogram')
+    plt.grid(True)
+    plt.show()
+    plt.close()
+    
     save_spectrogram(corrected_spectrogram_positive, 'corrected_spectrogram.png', 'Frequency Corrected Signal Spectrogram (Zero Padded)')
     
     # 解码校正后的信号 - 使用实部进行解码
@@ -226,8 +238,8 @@ def test_frequency_correction():
         min_score=6,
         max_iterations=40,
         # 限制解码范围，用于加快测试
-        freq_min=0,  # 最小频率限制 (Hz)
-        freq_max=1500,  # 最大频率限制 (Hz)
+        # freq_min=0,  # 最小频率限制 (Hz)
+        # freq_max=1500,  # 最大频率限制 (Hz)
         time_min=10,  # 最小时间限制 (秒)
         time_max=None   # 最大时间限制 (秒)
     )
