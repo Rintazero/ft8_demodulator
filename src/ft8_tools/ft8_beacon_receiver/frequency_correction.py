@@ -119,12 +119,12 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         - zscore_threshold: Z分数阈值 (默认: 5)
         - max_iteration_num: 最大迭代次数 (默认: 400)
         - debug_plots: 是否生成调试图 (默认: False)
-        - window_size: 连续性分析的窗口大小 (默认: 8)
+        - window_size_factor: 窗口大小因子，window_size = window_size_factor * steps_per_symbol (默认: 4)
         - max_variance_factor: 残差方差阈值的因子 (默认: 0.0001)
           实际max_variance = max_variance_factor * freq_bins²
         - fit_middle_percent: 拟合时使用中间部分的百分比，头尾各去掉(100-fit_middle_percent)/2%
         - poly_degree: 频率漂移拟合的多项式阶数 (默认: 1)
-        - precise_sync: 是否进行精确时间同步 (默认: False)
+        - precise_sync: 是否进行精确时间同步 
     
     返回:
     tuple: (校正后的信号, 估计的频率漂移率)
@@ -138,7 +138,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'zscore_threshold': 5,
         'max_iteration_num': 400,
         'debug_plots': True,
-        'window_size': 8,
+        'window_size_factor': 4,  # 窗口大小因子，用于计算window_size
         'max_variance_factor': 0.0001,  # 方差因子，实际方差阈值将乘以频谱点数的平方
         'fit_middle_percent': 100,  # 拟合时使用中间部分的百分比，头尾各去掉(100-fit_middle_percent)/2%
         'bins_per_tone': 2,  # 每个音调的频率bin数量
@@ -166,7 +166,10 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     ndata_sym = params['ndata_sym']
     zscore_threshold = params['zscore_threshold']
     max_iteration_num = params['max_iteration_num']
-    window_size = params['window_size']
+    
+    # 计算window_size
+    window_size = params['window_size_factor'] * steps_per_symbol
+
     
     # 信号长度
     nsamples = len(wave_complex)
