@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
+import logging
 from scipy import stats
 from scipy.interpolate import interp1d
 from sklearn.linear_model import LinearRegression
@@ -8,6 +9,16 @@ from ..ft8_demodulator.ftx_types import FT8Waterfall
 from sklearn.preprocessing import PolynomialFeatures
 from ..ft8_demodulator.spectrogram_analyse import calculate_spectrogram
 from ..ft8_demodulator.ft8_decode import create_waterfall_from_spectrogram
+
+# 配置模块级别的日志记录器
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+if not logger.handlers:
+    print("Adding console handler")
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(console_handler)
 
 # 设置matplotlib字体设置
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # 使用DejaVu Sans以获得更好的兼容性
@@ -100,7 +111,7 @@ def detect_signal_continuity(max_freq_indices, window_size=8, max_variance=10.0)
     # 检查最后一个段
     if in_segment:
         signal_segments.append((start_idx, len(max_freq_indices)-1))
-    print(signal_segments)
+    logger.debug("Detected signal segments: %s", signal_segments)
     return signal_segments, continuity_metric
 
 
@@ -205,7 +216,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     max_variance = params['max_variance_factor'] * (freq_bins ** 2)
     
     if debug_plots:
-        print(f"Spectrum bins: {freq_bins}, Variance threshold: {max_variance}")
+        logger.debug("Spectrum bins: %d, Variance threshold: %f", freq_bins, max_variance)
     
     # 计算最大幅度频率-时间序列的索引
     max_freq_indices = np.zeros(sx_filtered_db.shape[1], dtype=int)
@@ -221,7 +232,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     
     # 如果没有检测到信号段，返回原始信号
     if not signal_segments:
-        print("No continuous signal segments detected, returning original signal")
+        logger.warning("No continuous signal segments detected, returning original signal")
         return wave_complex, 0.0
     
     # 选择最长的信号段
@@ -231,7 +242,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 只为检测到的信号段计算实际频率
     freq_step = sym_bin / freq_osr
     max_freqs = np.zeros(len(max_freq_indices))
-    print("freq_step:", freq_step)
+    logger.debug("freq_step: %f", freq_step)
 
     # 计算整个序列的频率，但只用信号段的频率进行拟合
     for i in range(len(max_freq_indices)):
@@ -423,7 +434,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
 
     # 绘制同步相关序列
     if debug_plots:
-        print(longest_segment)
+        logger.debug("Detected longest segment: %s", longest_segment)
         plt.figure(figsize=(12, 6))
         plt.plot(max_freqs_masked, label='Max Freqs Masked Sequence')
         plt.title('Max Freqs Masked Sequence')
@@ -436,7 +447,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
 
     # 绘制同步相关序列
     if debug_plots:
-        print(longest_segment)
+        logger.debug("Plotting sync correlation sequence")
         plt.figure(figsize=(12, 6))
         plt.plot(sync_correlation, label='Sync Correlation Sequence')
         plt.title('Sync Correlation Sequence')
@@ -508,7 +519,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     
     # 如果数据点不足，使用整个信号段
     if len(regression_x) < 10:
-        print("Not enough sync points found, using the entire signal segment!!!!!!!!!!!!!、")
+        logger.warning("Not enough sync points found, using the entire signal segment")
         return wave_compensated_linear, f_shift_rate/fs
     
     # 使用高次多项式进行频偏建模
@@ -616,7 +627,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
                 plt.savefig('compensation_carrier_spectrogram.png')
                 plt.close()
         else:
-            print("poly_degree_final is not 1 or 2, using linear drift correction")
+            logger.warning("poly_degree_final is not 1 or 2, using linear drift correction")
             return wave_compensated_linear, f_shift_rate/fs
         
         # 应用最终补偿
@@ -634,9 +645,9 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
             if i < len(coefs_final):
                 drift_params[f'coef_order_{i}'] = coefs_final[i]
         
-        print(f"Final drift parameters: {drift_params}")
+        logger.info("Final drift parameters: %s", drift_params)
         return wave_compensated_final, f_shift_rate_final/fs
     
     # 如果数据点不足进行高次拟合，退回到线性拟合结果
-    print("Not enough data for high-order fitting, using linear drift correction")
+    logger.warning("Not enough data for high-order fitting, using linear drift correction")
     return wave_compensated_linear, f_shift_rate/fs
