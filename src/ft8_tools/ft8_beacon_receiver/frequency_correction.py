@@ -82,12 +82,12 @@ def detect_signal_continuity(max_freq_indices, window_size=8, max_variance=10.0)
     
     # 绘制连续性指标
     plt.figure(figsize=(12, 4))
-    plt.plot(continuity_metric, label='连续性指标')
-    plt.axhline(y=-max_variance, color='r', linestyle='--', label=f'阈值 (-{max_variance})')
+    plt.plot(continuity_metric, label='Continuity Metric')
+    plt.axhline(y=-max_variance, color='r', linestyle='--', label=f'Threshold (-{max_variance})')
     plt.grid(True)
-    plt.xlabel('时间点')
-    plt.ylabel('连续性指标 (负方差)')
-    plt.title('信号连续性分析')
+    plt.xlabel('Time Points')
+    plt.ylabel('Continuity Metric (Negative Variance)')
+    plt.title('Signal Continuity Analysis')
     plt.legend()
     plt.savefig('signal_continuity_detection.png')
     # plt.show()
@@ -646,7 +646,13 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
                 drift_params[f'coef_order_{i}'] = coefs_final[i]
         
         logger.info("Final drift parameters: %s", drift_params)
-        return wave_compensated_final, f_shift_rate_final/fs
+        # 使用poly_final.transform来正确转换输入数据
+        first_point = poly_final.transform(regression_x[0].reshape(1, -1))
+        last_point = poly_final.transform(regression_x[-1].reshape(1, -1))
+        first_pred = model_final.predict(first_point)[0]
+        last_pred = model_final.predict(last_point)[0]
+        f_shift_rate_real = (first_pred - last_pred)/(regression_x[0]-regression_x[-1]) + f_shift_rate
+        return wave_compensated_final, f_shift_rate_real/fs
     
     # 如果数据点不足进行高次拟合，退回到线性拟合结果
     logger.warning("Not enough data for high-order fitting, using linear drift correction")

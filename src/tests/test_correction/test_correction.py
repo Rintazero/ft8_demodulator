@@ -119,7 +119,7 @@ def test_frequency_correction(params=None, debug_plot=True):
         'payload': np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8),
         'fShift_t0_Hz': 0.0,  # 初始频偏
         'fShift_k_Hz': 568.0,  # 频偏变化率(Hz/s)
-        'Es_N0_dB': 40,   # 信号比上噪声频谱密度(dB)
+        'Es_N0_dB': 25,   # 信号比上噪声频谱密度(dB)
         'time_min': 10,   # 最小时间限制 (秒)
         'time_max': None, # 最大时间限制 (秒)
         'correction_params': {
@@ -128,7 +128,9 @@ def test_frequency_correction(params=None, debug_plot=True):
             'zscore_threshold': 5,
             'max_iteration_num': 400000,
             'bins_per_tone': 2,
-            'steps_per_symbol': 2
+            'steps_per_symbol': 8,
+            # 'window_size_factor': 8,  # 窗口大小因子，用于计算window_size
+            # 'max_variance_factor': 0.01  # 方差因子，实际方差阈值将乘以频谱点数的平方
         }
     }
     
