@@ -102,10 +102,18 @@ def test_frequency_correction(params=None, debug_plot=True):
         - time_min: 解码最小时间限制 (默认: 10 s)
         - time_max: 解码最大时间限制 (默认: None)
         - correction_params: 频率校正参数字典 (详见 correct_frequency_drift 函数)
+        - decode_params: 解码参数字典，包含以下字段:
+            - bins_per_tone: 每个音调的频率bins数量 (默认: 2)
+            - steps_per_symbol: 每个符号的时间步长 (默认: 2)
+            - max_candidates: 最大候选消息数量 (默认: 100)
+            - min_score: 最小得分阈值 (默认: 6)
+            - max_iterations: 最大迭代次数 (默认: 40)
+            - freq_min: 最小频率限制 (默认: None)
+            - freq_max: 最大频率限制 (默认: None)
     debug_plot: 是否生成调试图像 (默认: True)
     
     返回:
-    tuple: (校正后的信号, 估计的频率漂移率, 实际的频率漂移率, 解码结果)
+    tuple: (校正后的信号, 频率漂移估计误差, 解码结果)
     """
     logger.debug("开始频率校正测试...")
     
@@ -119,7 +127,7 @@ def test_frequency_correction(params=None, debug_plot=True):
         'payload': np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8),
         'fShift_t0_Hz': 0.0,  # 初始频偏
         'fShift_k_Hz': 568.0,  # 频偏变化率(Hz/s)
-        'Es_N0_dB': 25,   # 信号比上噪声频谱密度(dB)
+        'Es_N0_dB': 28,   # 信号比上噪声频谱密度(dB)
         'time_min': 10,   # 最小时间限制 (秒)
         'time_max': None, # 最大时间限制 (秒)
         'correction_params': {
@@ -131,6 +139,16 @@ def test_frequency_correction(params=None, debug_plot=True):
             'steps_per_symbol': 8,
             # 'window_size_factor': 8,  # 窗口大小因子，用于计算window_size
             # 'max_variance_factor': 0.01  # 方差因子，实际方差阈值将乘以频谱点数的平方
+        },
+        # decode_ft8_message 参数
+        'decode_params': {
+            'bins_per_tone': 2,
+            'steps_per_symbol': 2,
+            'max_candidates': 100,
+            'min_score': 6,
+            'max_iterations': 40,
+            'freq_min': None,  # 最小频率限制 (Hz)
+            'freq_max': None,  # 最大频率限制 (Hz)
         }
     }
     
@@ -154,6 +172,7 @@ def test_frequency_correction(params=None, debug_plot=True):
     time_min = params['time_min']
     time_max = params['time_max']
     correction_params = params['correction_params']
+    decode_params = params['decode_params']
     
     # 生成测试波形数据 - 实信号
     logger.debug("生成FT8实信号...")
@@ -271,6 +290,9 @@ def test_frequency_correction(params=None, debug_plot=True):
     logger.debug("实际的频率漂移率: %f Hz/sample", fShift_k_Hzpsample)
     logger.debug("频率漂移估计误差: %f Hz", (estimated_drift_rate - fShift_k_Hzpsample) * nsamples)
     
+    # 计算频率漂移估计误差
+    drift_estimation_error = (estimated_drift_rate - fShift_k_Hzpsample) * nsamples
+    
     # 计算校正后信号的频谱图
     logger.debug("计算校正后信号的频谱图...")
     corrected_spectrogram, f, t = calculate_spectrogram(np.real(wave_corrected), fs, 2, 2)
@@ -301,14 +323,14 @@ def test_frequency_correction(params=None, debug_plot=True):
     results_after_correction = decode_ft8_message(
         wave_data=np.real(wave_corrected),
         sample_rate=fs,
-        bins_per_tone=2,
-        steps_per_symbol=2,
-        max_candidates=100,
-        min_score=6,
-        max_iterations=40,
+        bins_per_tone=decode_params['bins_per_tone'],
+        steps_per_symbol=decode_params['steps_per_symbol'],
+        max_candidates=decode_params['max_candidates'],
+        min_score=decode_params['min_score'],
+        max_iterations=decode_params['max_iterations'],
         # 限制解码范围，用于加快测试
-        # freq_min=0,  # 最小频率限制 (Hz)
-        # freq_max=1500,  # 最大频率限制 (Hz)
+        freq_min=decode_params['freq_min'],  # 最小频率限制 (Hz)
+        freq_max=decode_params['freq_max'],  # 最大频率限制 (Hz)
         time_min=time_min,  # 最小时间限制 (秒)
         time_max=time_max   # 最大时间限制 (秒)
     )
@@ -334,9 +356,167 @@ def test_frequency_correction(params=None, debug_plot=True):
     logger.debug("频率校正测试完成!")
     
     # 返回结果
-    return wave_corrected, estimated_drift_rate, fShift_k_Hzpsample, results_after_correction
+    return wave_corrected, drift_estimation_error, results_after_correction
+
+
+def test_frequency_correction_with_linear_drift():
+    """测试频率校正功能，使用线性漂移，在不同信噪比下测试
+    
+    本函数在不同信噪比（35dB到20dB）条件下测试频率校正效果，并记录每个信噪比下的频偏估计误差
+    """
+    logger.debug("开始不同信噪比下的频率校正测试...")
+
+    # 设置测试信噪比范围
+    snr_levels = [35, 30,28,26, 25,23,21, 20]  # 35, 30, 25, 20 dB
+    results = []
+    
+    for snr in snr_levels:
+        logger.debug(f"===== 测试信噪比: {snr} dB =====")
+        
+        # 设置参数
+        params = {
+            'Es_N0_dB': snr,  # 设置当前信噪比
+            'fShift_k_Hz': 568.0,  # 频偏变化率(Hz/s)
+            'correction_params': {
+                'nsync_sym': 7,
+                'ndata_sym': 58,
+                'zscore_threshold': 5,
+                'max_iteration_num': 400000,
+                'bins_per_tone': 2,
+                'steps_per_symbol': 8,
+            },
+            # decode_ft8_message 参数
+            'decode_params': {
+                'bins_per_tone': 2,
+                'steps_per_symbol': 2,
+                'max_candidates': 100,
+                'min_score': 6,
+                'max_iterations': 40,
+                'freq_min': None,
+                'freq_max': 2000,
+            }
+        }
+        
+        # 运行测试
+        _, drift_error, decode_results = test_frequency_correction(params=params, debug_plot=False)
+        
+        # 记录结果
+        decode_success = len(decode_results) > 0
+        # 确保drift_error是标量值，如果是数组则取第一个元素
+        drift_error_scalar = float(drift_error) if not isinstance(drift_error, np.ndarray) else float(drift_error.item())
+        results.append({
+            'SNR_dB': snr,
+            'drift_error_Hz': drift_error_scalar,
+            'decode_success': decode_success,
+            'num_candidates': len(decode_results)
+        })
+        
+        logger.debug(f"信噪比 {snr} dB 结果: 频偏误差 = {drift_error_scalar:.2f} Hz, 解码成功: {decode_success}")
+    
+    # 输出汇总结果
+    logger.debug("\n===== 测试结果汇总 =====")
+    for result in results:
+        logger.debug(f"信噪比: {result['SNR_dB']} dB, 频偏误差: {result['drift_error_Hz']:.2f} Hz, "
+                   f"解码成功: {result['decode_success']}, 候选消息数: {result['num_candidates']}")
+    
+    # 绘制结果图表
+    plt.figure(figsize=(10, 5))
+    snr_values = [r['SNR_dB'] for r in results]
+    error_values = [abs(r['drift_error_Hz']) for r in results]
+    
+    plt.plot(snr_values, error_values, 'o-')
+    plt.xlabel('信噪比 (dB)')
+    plt.ylabel('频率漂移估计误差 (Hz)')
+    plt.title('不同信噪比下的频率漂移估计误差')
+    plt.grid(True)
+    plt.savefig('snr_vs_drift_error.png')
+    plt.close()
+    
+    return results
+
+
+def test_frequency_correction_with_different_drifts():
+    """测试频率校正功能，固定信噪比为35dB，在不同线性频偏下测试
+    
+    本函数在固定信噪比（35dB）条件下测试不同频率漂移率的频率校正效果，并记录每个频偏下的估计误差
+    """
+    logger.debug("开始不同线性频偏下的频率校正测试...")
+
+    # 固定信噪比
+    snr = 35  # dB
+    
+    # 设置测试频偏范围（单位：Hz/s）
+    drift_rates = [100.0, 200.0, 300.0]
+    results = []
+    
+    for drift_rate in drift_rates:
+        logger.debug(f"===== 测试频率漂移率: {drift_rate} Hz/s =====")
+        
+        # 设置参数
+        params = {
+            'Es_N0_dB': snr,  # 固定信噪比为35dB
+            'fShift_k_Hz': drift_rate,  # 设置当前频偏变化率(Hz/s)
+            'correction_params': {
+                'nsync_sym': 7,
+                'ndata_sym': 58,
+                'zscore_threshold': 5,
+                'max_iteration_num': 400000,
+                'bins_per_tone': 2,
+                'steps_per_symbol': 8,
+            },
+            # decode_ft8_message 参数
+            'decode_params': {
+                'bins_per_tone': 2,
+                'steps_per_symbol': 2,
+                'max_candidates': 100,
+                'min_score': 6,
+                'max_iterations': 40,
+                'freq_min': None,
+                'freq_max': 2000,
+            }
+        }
+        
+        # 运行测试
+        _, drift_error, decode_results = test_frequency_correction(params=params, debug_plot=False)
+        
+        # 记录结果
+        decode_success = len(decode_results) > 0
+        # 确保drift_error是标量值，如果是数组则取第一个元素
+        drift_error_scalar = float(drift_error) if not isinstance(drift_error, np.ndarray) else float(drift_error.item())
+        results.append({
+            'drift_rate_Hz_per_s': drift_rate,
+            'drift_error_Hz': drift_error_scalar,
+            'decode_success': decode_success,
+            'num_candidates': len(decode_results)
+        })
+        
+        logger.debug(f"频率漂移率 {drift_rate} Hz/s 结果: 频偏误差 = {drift_error_scalar:.2f} Hz, 解码成功: {decode_success}")
+    
+    # 输出汇总结果
+    logger.debug("\n===== 测试结果汇总 =====")
+    for result in results:
+        logger.debug(f"频率漂移率: {result['drift_rate_Hz_per_s']} Hz/s, 频偏误差: {result['drift_error_Hz']:.2f} Hz, "
+                   f"解码成功: {result['decode_success']}, 候选消息数: {result['num_candidates']}")
+    
+    # 绘制结果图表
+    plt.figure(figsize=(10, 5))
+    drift_values = [r['drift_rate_Hz_per_s'] for r in results]
+    error_values = [abs(r['drift_error_Hz']) for r in results]
+    
+    plt.plot(drift_values, error_values, 'o-')
+    plt.xlabel('频率漂移率 (Hz/s)')
+    plt.ylabel('频率漂移估计误差 (Hz)')
+    plt.title('不同频率漂移率下的频率漂移估计误差 (SNR=35dB)')
+    plt.grid(True)
+    plt.savefig('drift_rate_vs_error.png')
+    plt.close()
+    
+    return results
+
 
 if __name__ == "__main__":
     logger.debug("开始测试...")
-    test_frequency_correction(debug_plot=True)
+    # test_frequency_correction(debug_plot=True)
+    # test_frequency_correction_with_linear_drift()
+    test_frequency_correction_with_different_drifts()
     logger.debug("所有测试完成!")
