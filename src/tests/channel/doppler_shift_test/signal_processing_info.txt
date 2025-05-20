@@ -1,8 +1,0 @@
-Signal Processing Info
-----------------------------------
-compensated_signal Info
-fs_Hz: 50000.0
-----------------------------------
-down_sampled_signal Info
-down_sample_factor: 25
-fs_Hz: 2000.0

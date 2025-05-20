@@ -320,9 +320,9 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     
 
     # 只取正频率部分
-    positive_freq_mask = f >= 0
-    spectrogram = spectrogram[positive_freq_mask]
-    f = f[positive_freq_mask]
+    # positive_freq_mask = f >= 0
+    # spectrogram = spectrogram[positive_freq_mask]
+    # f = f[positive_freq_mask]
 
     # 应用频率限制
     if freq_min is not None or freq_max is not None:
@@ -348,6 +348,7 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
     plt.title('FT8 Signal Spectrogram')
     plt.xlabel('Time (s)')
     plt.ylabel('Frequency (Hz)')
+    
     
     # 创建瀑布数据结构
     wf = create_waterfall_from_spectrogram(
@@ -375,7 +376,7 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
                      fontsize=8,
                      bbox=dict(boxstyle="round,pad=0.3", fc="red", alpha=0.7))
     
-    # plt.show()
+    plt.show()
     plt.savefig('ft8_spectrogram_with_candidates.png')
     plt.close()
     

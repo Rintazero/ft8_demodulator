@@ -192,9 +192,9 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     )
     
     # 只保留正频率部分
-    positive_freq_mask = f >= 0
-    sx_filtered_db = sx_filtered_db[positive_freq_mask]
-    f = f[positive_freq_mask]
+    # positive_freq_mask = f >= 0
+    # sx_filtered_db = sx_filtered_db[positive_freq_mask]
+    # f = f[positive_freq_mask]
     
     # 创建FT8Waterfall对象
     waterfall = create_waterfall_from_spectrogram(
@@ -365,10 +365,21 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         wave_compensated_linear, fs, bins_per_tone, steps_per_symbol
     )
     
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        plt.imshow(sx_filtered_db_2nd, aspect='auto', origin='lower', extent=[t_2nd[0], t_2nd[-1], f_2nd[0], f_2nd[-1]])
+        plt.colorbar(label='Intensity (dB)')
+        plt.title('FT8 Signal Spectrogram')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Frequency (Hz)')
+        plt.savefig('corrected_signal_spectrogram_second.png')
+        plt.close()
+    
+
     # 只保留正频率部分
-    positive_freq_mask_2nd = f_2nd >= 0
-    sx_filtered_db_2nd = sx_filtered_db_2nd[positive_freq_mask_2nd]
-    f_2nd = f_2nd[positive_freq_mask_2nd]
+    # positive_freq_mask_2nd = f_2nd >= 0
+    # sx_filtered_db_2nd = sx_filtered_db_2nd[positive_freq_mask_2nd]
+    # f_2nd = f_2nd[positive_freq_mask_2nd]
     
     # 创建第二个FT8Waterfall对象
     waterfall_2nd = create_waterfall_from_spectrogram(
@@ -420,7 +431,9 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     start_idx, end_idx = longest_segment
 
     # TODO: 修正end_idx
-    end_idx = end_idx + window_size - 2
+    end_idx = end_idx + window_size - 3
+    # 修正start_idx
+    start_idx = start_idx
     
     # 只在检测到的连续信号段内进行相关计算
     # 创建修改后的频率序列，只保留连续段，其余部分置零
@@ -460,8 +473,36 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
 
     # 找到相关峰值
     correlation_peak_index = np.argmax(sync_correlation)
+    
+    # 绘制max_freqs_masked
+    if debug_plots:
+        plt.figure(figsize=(12, 6))
+        plt.plot(max_freqs_masked, label='Max Freqs Masked')
+        plt.title('Max Freqs Masked')
+        plt.xlabel('Sample Points')
+        plt.ylabel('Frequency (Hz)')
+        plt.grid(True)
+        plt.legend()
+        plt.savefig('max_freqs_masked_after_sync.png')
+        plt.show()
+        plt.close()
+
+    # for i in range(len(three_sync_correlation_seq)):
+    #     max_freqs_masked[correlation_peak_index - (len(three_sync_correlation_seq)-1) + i] -= three_sync_correlation_seq[i]
+
     correlation_peak_time_block_index = correlation_peak_index - (len(three_sync_correlation_seq) - 1) + samples_per_sym//2
     
+    if debug_plots:
+        plt.figure(figsize=(12, 6))
+        plt.plot(max_freqs_masked, label='Max Freqs Masked')
+        plt.title('Max Freqs Masked')
+        plt.xlabel('Sample Points')
+        plt.ylabel('Frequency (Hz)')
+        plt.grid(True)
+        plt.legend()
+        plt.savefig('max_freqs_masked_after_sync.png')
+        plt.show()
+        plt.close()
 
 
     
@@ -609,26 +650,34 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
             t = array_range/fs
             phase_accumulation = f_shift_rate_final*t**2/2 + f_shift_acc_final*t**3/3
             compensation_carrier_final = np.exp(-2j*np.pi*phase_accumulation)
-            
-            # 绘制补偿载波的频谱图
-            if debug_plots:
-                plt.figure(figsize=(10, 6))
-                compensation_carrier_final_db, f, t = calculate_spectrogram(
-                    compensation_carrier_final, fs, bins_per_tone, steps_per_symbol
-                )
-                
-                plt.imshow(compensation_carrier_final_db, aspect='auto', origin='lower', 
-                   extent=[t[0], t[-1], f[0], f[-1]])
-                plt.colorbar(label='Magnitude (dB)')
-                plt.xlabel('Time (s)')
-                plt.ylabel('Frequency (Hz)')
-                plt.title('Corrected Signal Spectrogram')
-                plt.grid(True)
-                plt.savefig('compensation_carrier_spectrogram.png')
-                plt.close()
+        elif poly_degree_final == 3:
+            # 三阶多项式拟合情况下：
+            # 频移量 = f_shift_rate_final*t + f_shift_acc_final*t^2 + f_shift_rate_acc_final*t^3
+            # 相位累积 = f_shift_rate_final*t^2/2 + f_shift_acc_final*t^3/3 + f_shift_rate_acc_final*t^4/4
+            # 对于离散序列，t = array_range/fs
+            t = array_range/fs
+            phase_accumulation = coefs_final[1]*t**2/2 + coefs_final[2]*t**3/3 + coefs_final[3]*t**4/4
+            compensation_carrier_final = np.exp(-2j*np.pi*phase_accumulation)
         else:
-            logger.warning("poly_degree_final is not 1 or 2, using linear drift correction")
+            logger.warning("poly_degree_final is not 1, 2 or 3, using linear drift correction")
             return wave_compensated_linear, f_shift_rate/fs
+            
+        # 绘制补偿载波的频谱图
+        if debug_plots:
+            plt.figure(figsize=(10, 6))
+            compensation_carrier_final_db, f, t = calculate_spectrogram(
+                compensation_carrier_final, fs, bins_per_tone, steps_per_symbol
+            )
+            
+            plt.imshow(compensation_carrier_final_db, aspect='auto', origin='lower', 
+               extent=[t[0], t[-1], f[0], f[-1]])
+            plt.colorbar(label='Magnitude (dB)')
+            plt.xlabel('Time (s)')
+            plt.ylabel('Frequency (Hz)')
+            plt.title('Corrected Signal Spectrogram')
+            plt.grid(True)
+            plt.savefig('compensation_carrier_spectrogram.png')
+            plt.close()
         
         # 应用最终补偿
         wave_compensated_final = wave_compensated_linear * compensation_carrier_final
