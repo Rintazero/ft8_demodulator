@@ -376,7 +376,7 @@ def decode_ft8_message(wave_data: np.ndarray, sample_rate: int,
                      fontsize=8,
                      bbox=dict(boxstyle="round,pad=0.3", fc="red", alpha=0.7))
     
-    plt.show()
+    # plt.show()
     plt.savefig('ft8_spectrogram_with_candidates.png')
     plt.close()
     

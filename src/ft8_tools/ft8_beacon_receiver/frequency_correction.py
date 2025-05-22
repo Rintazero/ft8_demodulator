@@ -10,6 +10,9 @@ from sklearn.preprocessing import PolynomialFeatures
 from ..ft8_demodulator.spectrogram_analyse import calculate_spectrogram
 from ..ft8_demodulator.ft8_decode import create_waterfall_from_spectrogram
 
+# 设置全局字体大小变量
+FONT_SIZE = 16  # 调大的字体大小
+
 # 配置模块级别的日志记录器
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -23,6 +26,13 @@ if not logger.handlers:
 # 设置matplotlib字体设置
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans']  # 使用DejaVu Sans以获得更好的兼容性
 plt.rcParams['axes.unicode_minus'] = False  # 修复负号显示问题
+plt.rcParams['font.size'] = FONT_SIZE  # 全局字体大小
+plt.rcParams['axes.labelsize'] = FONT_SIZE  # 坐标轴标签字体大小
+plt.rcParams['axes.titlesize'] = FONT_SIZE + 2  # 标题字体大小
+plt.rcParams['xtick.labelsize'] = FONT_SIZE - 2  # x轴刻度字体大小
+plt.rcParams['ytick.labelsize'] = FONT_SIZE - 2  # y轴刻度字体大小
+plt.rcParams['legend.fontsize'] = FONT_SIZE - 2  # 图例字体大小
+plt.rcParams['figure.titlesize'] = FONT_SIZE + 4  # 图形标题字体大小
 
 def gfsk_pulse(bt, t):
     """
@@ -80,18 +90,7 @@ def detect_signal_continuity(max_freq_indices, window_size=8, max_variance=10.0)
         # 使用负方差作为连续性指标（值越高表示越连续）
         continuity_metric[i] = -variance
     
-    # 绘制连续性指标
-    plt.figure(figsize=(12, 4))
-    plt.plot(continuity_metric, label='Continuity Metric')
-    plt.axhline(y=-max_variance, color='r', linestyle='--', label=f'Threshold (-{max_variance})')
-    plt.grid(True)
-    plt.xlabel('Time Points')
-    plt.ylabel('Continuity Metric (Negative Variance)')
-    plt.title('Signal Continuity Analysis')
-    plt.legend()
-    plt.savefig('signal_continuity_detection.png')
-    # plt.show()
-    plt.close()
+
     # 检测连续区域（超过阈值的区域）
     is_signal = continuity_metric > -max_variance
     
@@ -156,6 +155,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'steps_per_symbol': 2,  # 每个符号的时间步数
         'poly_degree': 2,      # 频率漂移拟合的多项式阶数
         'precise_sync': True,  # 是否进行精确时间同步
+        'font_size': FONT_SIZE,  # 添加字体大小参数
     }
     
     if params is None:
@@ -168,6 +168,13 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 设置matplotlib使用英文字体以避免中文字体问题
     plt.rcParams['font.sans-serif'] = ['Arial']
     plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams['font.size'] = params['font_size']  # 使用参数中的字体大小
+    plt.rcParams['axes.labelsize'] = params['font_size']
+    plt.rcParams['axes.titlesize'] = params['font_size'] + 2
+    plt.rcParams['xtick.labelsize'] = params['font_size'] - 2
+    plt.rcParams['ytick.labelsize'] = params['font_size'] - 2
+    plt.rcParams['legend.fontsize'] = params['font_size'] - 2
+    plt.rcParams['figure.titlesize'] = params['font_size'] + 4
 
     # 基本变量
     bins_per_tone = params['bins_per_tone']
@@ -211,6 +218,20 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 频谱点数
     freq_bins = sx_filtered_db.shape[0]
     
+    if debug_plots:
+        # Plot spectrogram
+        plt.figure(figsize=(10, 6))
+        plt.imshow(sx_filtered_db, aspect='auto', origin='lower',
+                extent=[t[0], t[-1], f[0], f[-1]], cmap='viridis')
+        plt.colorbar(label='Magnitude (dB)')
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size']) 
+        plt.title('Signal Spectrogram', fontsize=params['font_size']+2)
+        plt.grid(True)
+        plt.savefig('signal_spectrogram.png')
+        # plt.show()
+        plt.close()
+    
     # 根据频谱点数的平方计算实际的方差阈值
     # 残差与频谱索引的范围平方成正比，因为索引可能在0到freq_bins-1之间变动
     max_variance = params['max_variance_factor'] * (freq_bins ** 2)
@@ -222,6 +243,27 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     max_freq_indices = np.zeros(sx_filtered_db.shape[1], dtype=int)
     for i in range(sx_filtered_db.shape[1]):
         max_freq_indices[i] = np.argmax(sx_filtered_db[:, i])
+    
+    # 计算时间轴（秒）
+    time_step = sym_t / time_osr
+    time_axis = np.arange(len(max_freq_indices)) * time_step
+    
+    # 计算频率轴（Hz）
+    freq_step = sym_bin / freq_osr
+    max_freqs = max_freq_indices * freq_step
+    
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        plt.plot(time_axis, max_freqs, 'b-', label='Maximum Frequency')
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+        plt.title('Frequency vs Time', fontsize=params['font_size']+2)
+        plt.grid(True)
+        plt.legend(fontsize=params['font_size']-2)
+        plt.savefig('frequency_vs_time.png')
+        # plt.show()
+        plt.close()
+
     
     # 先检测信号连续性 - 粗时间同步
     signal_segments, continuity_metric = detect_signal_continuity(
@@ -268,11 +310,11 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
             plt.plot(time_axis[seg_start:seg_end+1], max_freqs[seg_start:seg_end+1], 
                     'r-', linewidth=2, label='_')
         
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
-        plt.title('Maximum Frequency Sequence and Detected Signal Segments')
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+        plt.title('Maximum Frequency Sequence and Detected Signal Segments', fontsize=params['font_size']+2)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=params['font_size']-2)
         
         # 副图：连续性指标
         plt.subplot(2, 1, 2)
@@ -293,11 +335,11 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
                            continuity_time_axis[min(adj_end, len(continuity_time_axis)-1)], 
                            alpha=0.2, color='green', label='_')
         
-        plt.xlabel('Time (s)')
-        plt.ylabel('Continuity Metric (-variance)')
-        plt.title('Signal Continuity Metric')
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Continuity Metric (-variance)', fontsize=params['font_size'])
+        plt.title('Signal Continuity Metric', fontsize=params['font_size']+2)
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=params['font_size']-2)
         
         plt.tight_layout()
         plt.savefig('signal_continuity_detection.png')
@@ -336,6 +378,34 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     model = LinearRegression()
     model.fit(X_poly, seg_freq_fit)
     
+    # 绘制拟合结果
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        
+        # Plot data points used for fitting
+        plt.scatter(seg_time_fit, seg_freq_fit, color='green', alpha=0.5, label='Points Used for Fitting')
+        
+        # Generate fitting curve
+        x_smooth = np.linspace(seg_time.min(), seg_time.max(), 100).reshape(-1, 1)
+        X_smooth_poly = poly.transform(x_smooth)
+        y_smooth = model.predict(X_smooth_poly)
+        
+        # Plot fitting curve
+        plt.plot(x_smooth, y_smooth, color='red', label='Linear Fit')
+        
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+        plt.title('Frequency Drift Linear Fitting', fontsize=params['font_size']+2)
+        plt.legend(fontsize=params['font_size']-2)
+        plt.grid(True)
+        
+        # Display fitting equation
+        equation = f'f(t) = {model.coef_[1]:.4f}t + {model.intercept_:.4f}'
+        plt.figtext(0.5, 0.02, equation, ha='center', fontsize=params['font_size']-2)
+        
+        plt.savefig('frequency_drift_fitting.png')
+        # plt.show()
+        plt.close()
     # 获取系数
     intercept = model.intercept_  # 截距是标量
     coefs = model.coef_  # 多项式系数
@@ -369,9 +439,9 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         plt.figure(figsize=(10, 6))
         plt.imshow(sx_filtered_db_2nd, aspect='auto', origin='lower', extent=[t_2nd[0], t_2nd[-1], f_2nd[0], f_2nd[-1]])
         plt.colorbar(label='Intensity (dB)')
-        plt.title('FT8 Signal Spectrogram')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
+        plt.title('FT8 Signal Spectrogram', fontsize=params['font_size']+2)
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
         plt.savefig('corrected_signal_spectrogram_second.png')
         plt.close()
     
@@ -450,59 +520,36 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         logger.debug("Detected longest segment: %s", longest_segment)
         plt.figure(figsize=(12, 6))
         plt.plot(max_freqs_masked, label='Max Freqs Masked Sequence')
-        plt.title('Max Freqs Masked Sequence')
-        plt.xlabel('Sample Points')
-        plt.ylabel('Amplitude')
+        plt.title('Max Freqs Masked Sequence', fontsize=params['font_size']+2)
+        plt.xlabel('Sample Points', fontsize=params['font_size'])
+        plt.ylabel('Amplitude', fontsize=params['font_size'])
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=params['font_size']-2)
         plt.savefig('max_freqs_masked.png')
+        # plt.show()
         plt.close()
 
-    # 绘制同步相关序列
+    
+    # 绘制同步序列
     if debug_plots:
         logger.debug("Plotting sync correlation sequence")
         plt.figure(figsize=(12, 6))
-        plt.plot(sync_correlation, label='Sync Correlation Sequence')
-        plt.title('Sync Correlation Sequence')
-        plt.xlabel('Sample Points')
-        plt.ylabel('Amplitude')
+        plt.plot(three_sync_correlation_seq, label='Sync Sequence')
+        plt.title('Sync Sequence', fontsize=params['font_size']+2)
+        plt.xlabel('Sample Points', fontsize=params['font_size'])
+        plt.ylabel('Amplitude', fontsize=params['font_size'])
         plt.grid(True)
-        plt.legend()
-        plt.savefig('sync_correlation.png')
+        plt.legend(fontsize=params['font_size']-2)
+        plt.savefig('three_sync_correlation_seq.png')
+        # plt.show()
         plt.close()
 
     # 找到相关峰值
     correlation_peak_index = np.argmax(sync_correlation)
     
-    # 绘制max_freqs_masked
-    if debug_plots:
-        plt.figure(figsize=(12, 6))
-        plt.plot(max_freqs_masked, label='Max Freqs Masked')
-        plt.title('Max Freqs Masked')
-        plt.xlabel('Sample Points')
-        plt.ylabel('Frequency (Hz)')
-        plt.grid(True)
-        plt.legend()
-        plt.savefig('max_freqs_masked_after_sync.png')
-        plt.show()
-        plt.close()
-
-    # for i in range(len(three_sync_correlation_seq)):
-    #     max_freqs_masked[correlation_peak_index - (len(three_sync_correlation_seq)-1) + i] -= three_sync_correlation_seq[i]
 
     correlation_peak_time_block_index = correlation_peak_index - (len(three_sync_correlation_seq) - 1) + samples_per_sym//2
     
-    if debug_plots:
-        plt.figure(figsize=(12, 6))
-        plt.plot(max_freqs_masked, label='Max Freqs Masked')
-        plt.title('Max Freqs Masked')
-        plt.xlabel('Sample Points')
-        plt.ylabel('Frequency (Hz)')
-        plt.grid(True)
-        plt.legend()
-        plt.savefig('max_freqs_masked_after_sync.png')
-        plt.show()
-        plt.close()
 
 
     
@@ -511,12 +558,13 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         plt.figure(figsize=(12, 6))
         plt.plot(sync_correlation, label='Sync Correlation')
         plt.axvline(x=correlation_peak_index, color='r', linestyle='--', label='Peak')
-        plt.title('Precise Time Synchronization (using signal segment only)')
-        plt.xlabel('Correlation Lag')
-        plt.ylabel('Correlation Value')
+        plt.title('Precise Time Synchronization', fontsize=params['font_size']+2)
+        plt.xlabel('Correlation Lag', fontsize=params['font_size'])
+        plt.ylabel('Correlation Value', fontsize=params['font_size'])
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=params['font_size']-2)
         plt.savefig('precise_sync_correlation.png')
+        # plt.show()
         plt.close()
         
         # 绘制找到的精确同步点对应的频率轨迹
@@ -529,11 +577,11 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         # 标记信号段区域
         plt.axvspan(start_idx * time_step, end_idx * time_step, 
                   alpha=0.2, color='green', label='Signal Segment')
-        plt.title('Precise Synchronization on Frequency Trajectory')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Frequency (Hz)')
+        plt.title('Precise Synchronization on Frequency Trajectory', fontsize=params['font_size']+2)
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
         plt.grid(True)
-        plt.legend()
+        plt.legend(fontsize=params['font_size']-2)
         plt.savefig('precise_sync_point.png')
         plt.close()
     
@@ -607,10 +655,10 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
             plt.plot(x_smooth, y_smooth, color='red', label=f'Degree-{poly_degree_final} Polynomial Fit')
             
             # 添加标签和标题
-            plt.xlabel('Time (s)')
-            plt.ylabel('Frequency (Hz)')
-            plt.title('High-Order Frequency Drift Fitting')
-            plt.legend()
+            plt.xlabel('Time (s)', fontsize=params['font_size'])
+            plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+            plt.title('High-Order Frequency Drift Fitting', fontsize=params['font_size']+2)
+            plt.legend(fontsize=params['font_size']-2)
             plt.grid(True)
             
             # 显示拟合方程
@@ -623,14 +671,14 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
                 else:
                     equation += f'{intercept_final:.4f}'
             
-            plt.figtext(0.5, 0.01, equation, ha='center', fontsize=10)
+            plt.figtext(0.5, 0.01, equation, ha='center', fontsize=params['font_size']-2)
             
             if poly_degree_final >= 2:
                 info = f'Linear rate: {f_shift_rate_final:.4f} Hz/s, Acceleration: {f_shift_acc_final:.4e} Hz/s²'
-                plt.figtext(0.5, 0.04, info, ha='center', fontsize=10)
+                plt.figtext(0.5, 0.04, info, ha='center', fontsize=params['font_size']-2)
             else:
                 info = f'Linear rate: {f_shift_rate_final:.4f} Hz/s'
-                plt.figtext(0.5, 0.04, info, ha='center', fontsize=10)
+                plt.figtext(0.5, 0.04, info, ha='center', fontsize=params['font_size']-2)
             
             plt.savefig('high_order_drift_fitting.png')
             plt.close()
@@ -672,9 +720,9 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
             plt.imshow(compensation_carrier_final_db, aspect='auto', origin='lower', 
                extent=[t[0], t[-1], f[0], f[-1]])
             plt.colorbar(label='Magnitude (dB)')
-            plt.xlabel('Time (s)')
-            plt.ylabel('Frequency (Hz)')
-            plt.title('Corrected Signal Spectrogram')
+            plt.xlabel('Time (s)', fontsize=params['font_size'])
+            plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+            plt.title('Corrected Signal Spectrogram', fontsize=params['font_size']+2)
             plt.grid(True)
             plt.savefig('compensation_carrier_spectrogram.png')
             plt.close()

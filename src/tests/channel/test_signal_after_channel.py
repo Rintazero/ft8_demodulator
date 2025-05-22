@@ -19,7 +19,7 @@ fc_Hz = 2.405e9
 fs_Hz = 50e3
 f0_Hz = 100 + 3.125
 SignalTime_s = 20
-SignalTimeShift_s = 1
+SignalTimeShift_s = 3
 
 # 创建保存目录
 save_path = "./src/tests/channel/doppler_shift_test"
@@ -47,13 +47,20 @@ plt.close()
 payload = np.array([0x1C, 0x3F, 0x8A, 0x6A, 0xE2, 0x07, 0xA1, 0xE3, 0x94, 0x50], dtype=np.uint8)
 baseband_signal = ft8_baseband_generator(payload, fs_Hz, f0_Hz)
 
-baseband_power = np.mean(np.abs(baseband_signal)**2)
-SNR_dB = 10  # Signal-to-Noise Ratio in dB
-SNR_linear = 10 ** (SNR_dB / 10)  # Convert SNR from dB to linear scale
-noise_power = baseband_power / SNR_linear  # Calculate noise power
+# 计算信号能量
+signal_energy = np.sum(np.abs(baseband_signal)**2) / len(baseband_signal)
+
+# 设置信噪比和计算噪声功率谱密度
+SNR_dB = 40  # Signal-to-Noise Ratio in dB
+# 根据Es/N0计算噪声功率谱密度
+N0 = signal_energy / (10**(SNR_dB/10))
+# 计算噪声功率，考虑采样率影响
+noise_power = N0 * fs_Hz
 
 num_samples = int(SignalTime_s * fs_Hz)
-gaussian_noise = np.random.normal(0, np.sqrt(noise_power), num_samples) + 1j * np.random.normal(0, np.sqrt(noise_power), num_samples)
+# 生成复高斯噪声
+noise_std = np.sqrt(noise_power/2)  # 复噪声的实部和虚部标准差
+gaussian_noise = np.random.normal(0, noise_std, num_samples) + 1j * np.random.normal(0, noise_std, num_samples)
 
 SignalTimeShift_samples = int(SignalTimeShift_s * fs_Hz)  # 转换为采样点数
 extended_baseband_signal = np.zeros(num_samples, dtype=np.complex128)
