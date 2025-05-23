@@ -110,6 +110,40 @@ def detect_signal_continuity(max_freq_indices, window_size=8, max_variance=10.0)
     # 检查最后一个段
     if in_segment:
         signal_segments.append((start_idx, len(max_freq_indices)-1))
+    # 创建一个包含两个子图的图像
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    
+    # 绘制连续性指标图像
+    ax1.plot(continuity_metric)
+    ax1.axhline(y=-max_variance, color='r', linestyle='--', label='阈值')
+    ax1.set_xlabel('时间点')
+    ax1.set_ylabel('连续性指标')
+    ax1.set_title('信号连续性指标')
+    ax1.legend()
+    ax1.grid(True)
+    
+    # 标记检测到的信号段
+    for start, end in signal_segments:
+        ax1.axvspan(start, end, color='green', alpha=0.2)
+    
+    # 绘制最大频率轨迹
+    ax2.plot(max_freq_indices, label='频率轨迹')
+    ax2.set_xlabel('时间点')
+    ax2.set_ylabel('频率索引')
+    ax2.set_title('信号频率轨迹')
+    ax2.grid(True)
+    
+    # 标记检测到的信号段
+    for start, end in signal_segments:
+        ax2.axvspan(start, end, color='green', alpha=0.2)
+    
+    # 调整子图之间的间距
+    plt.tight_layout()
+    
+    # 保存图像
+    plt.savefig('signal_analysis.png')
+    plt.show()
+    plt.close()
     logger.debug("Detected signal segments: %s", signal_segments)
     return signal_segments, continuity_metric
 
@@ -182,6 +216,10 @@ def remove_outliers_iterative(freq_indices, spectrogram, zscore_threshold=5.0, m
         
         iteration_num += 1
     
+    if iteration_num == max_iter:
+        logger.warning("Outlier removal iteration reached max_iter, max z_score: %f", max(z_scores))
+    
+    logger.debug("max z_score: %f", max(z_scores))
     # 如果需要生成调试图
     if debug_plots and corrected_points:
         plt.figure(figsize=(12, 6))
@@ -259,7 +297,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'precise_sync': True,  # 是否进行精确时间同步
         'font_size': FONT_SIZE,  # 添加字体大小参数
         'outlier_zscore_threshold': 5.0,  # 离群点Z-score阈值
-        'outlier_max_iter_factor': 2.0,   # 离群点最大迭代次数与time_osr的比例因子
+        'outlier_max_iter_factor': 1000.0,   # 离群点最大迭代次数与time_osr的比例因子
     }
     
     if params is None:

@@ -51,13 +51,15 @@ baseband_signal = ft8_baseband_generator(payload, fs_Hz, f0_Hz)
 signal_energy = np.sum(np.abs(baseband_signal)**2) / len(baseband_signal)
 
 # 设置信噪比和计算噪声功率谱密度
-SNR_dB = 40  # Signal-to-Noise Ratio in dB
+SNR_dB = 28  # Signal-to-Noise Ratio in dB
 # 根据Es/N0计算噪声功率谱密度
 N0 = signal_energy / (10**(SNR_dB/10))
 # 计算噪声功率，考虑采样率影响
 noise_power = N0 * fs_Hz
 
 num_samples = int(SignalTime_s * fs_Hz)
+# 设置随机种子以确保结果可重现
+np.random.seed(42)
 # 生成复高斯噪声
 noise_std = np.sqrt(noise_power/2)  # 复噪声的实部和虚部标准差
 gaussian_noise = np.random.normal(0, noise_std, num_samples) + 1j * np.random.normal(0, noise_std, num_samples)
@@ -129,6 +131,7 @@ correction_params = {
     'steps_per_symbol': 8,
     'precise_sync': True,  # 是否进行精确时间同步
     'poly_degree': 2,
+    'max_variance_factor': 0.005,
     
 }
 
