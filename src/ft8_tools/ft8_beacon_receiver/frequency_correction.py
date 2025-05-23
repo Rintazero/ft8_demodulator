@@ -113,6 +113,110 @@ def detect_signal_continuity(max_freq_indices, window_size=8, max_variance=10.0)
     logger.debug("Detected signal segments: %s", signal_segments)
     return signal_segments, continuity_metric
 
+def remove_outliers_iterative(freq_indices, spectrogram, zscore_threshold=5.0, max_iter=None, debug_plots=False, font_size=16):
+    """
+    使用迭代线性回归和Z-score方法移除频率轨迹中的离群点（模仿初代算法）
+    
+    参数:
+    freq_indices: 频率索引数据（对应频谱图的行索引）
+    spectrogram: 频谱图数据，形状为(频率bins, 时间steps)
+    zscore_threshold: Z-score阈值，超过此值的点被视为离群点
+    max_iter: 最大迭代次数，如果为None则设置为len(freq_indices)的100%
+    debug_plots: 是否生成调试图
+    font_size: 字体大小
+    
+    返回:
+    cleaned_freq_indices: 清除离群点后的频率索引
+    """
+    if max_iter is None:
+        max_iter = max(int(len(freq_indices) * 1), 1)  # 默认最大迭代次数为数据长度的10%
+    
+    # 复制原始数据
+    cleaned_freq_indices = freq_indices.copy().astype(int)
+    cleaned_spectrogram = spectrogram.copy()
+    
+    # 记录被修正的点
+    corrected_points = []
+    
+    # 迭代处理离群点
+    iteration_num = 0
+    
+    while iteration_num < max_iter:
+        # 使用频率索引进行线性回归（模仿初代算法）
+        x = np.arange(len(cleaned_freq_indices)).reshape(-1, 1)
+        model = LinearRegression()
+        model.fit(x, cleaned_freq_indices)
+        freq_indices_fitted = model.predict(x)
+        
+        # 计算残差
+        residuals = cleaned_freq_indices - freq_indices_fitted
+        
+        # 使用scipy.stats.zscore计算Z分数（模仿初代算法）
+        z_scores = np.abs(stats.zscore(residuals))
+        
+        # 找到所有超过阈值的离群点
+        outlier_indices = np.where(z_scores > zscore_threshold)[0]
+        
+        # 如果没有离群点，结束迭代
+        if len(outlier_indices) == 0:
+            break
+        
+        # 选择Z分数最大的离群点进行处理（模仿初代算法）
+        max_zscore_idx_in_outliers = np.argmax(z_scores[outlier_indices])
+        max_zscore_idx = outlier_indices[max_zscore_idx_in_outliers]
+        
+        # 记录离群点的原始值
+        original_freq_idx = cleaned_freq_indices[max_zscore_idx]
+        
+        # 将该离群点在频谱图中的值设为最小值（模仿初代算法）
+        cleaned_spectrogram[original_freq_idx, max_zscore_idx] = np.min(cleaned_spectrogram)
+        
+        # 重新计算该时间点的最大频率索引（模仿初代算法）
+        new_freq_idx = np.argmax(cleaned_spectrogram[:, max_zscore_idx])
+        
+        # 记录该离群点的修正信息
+        corrected_points.append((max_zscore_idx, original_freq_idx, new_freq_idx))
+        
+        # 更新频率索引
+        cleaned_freq_indices[max_zscore_idx] = new_freq_idx
+        
+        iteration_num += 1
+    
+    # 如果需要生成调试图
+    if debug_plots and corrected_points:
+        plt.figure(figsize=(12, 6))
+        
+        # 绘制原始数据
+        time_points = np.arange(len(freq_indices))
+        plt.plot(time_points, freq_indices, 'b-', alpha=0.5, label='原始频率索引轨迹')
+        
+        # 绘制清理后的数据
+        plt.plot(time_points, cleaned_freq_indices, 'g-', label='清理后的频率索引轨迹')
+        
+        # 标记被修正的离群点
+        corrected_x = [time_points[idx] for idx, _, _ in corrected_points]
+        corrected_orig_y = [orig_y for _, orig_y, _ in corrected_points]
+        corrected_new_y = [new_y for _, _, new_y in corrected_points]
+        
+        plt.scatter(corrected_x, corrected_orig_y, color='red', s=50, marker='x', label='检测到的离群点')
+        plt.scatter(corrected_x, corrected_new_y, color='orange', s=50, marker='o', label='替换值（重新计算的最大值）')
+        
+        # 用箭头连接原始点和修正点
+        for i in range(len(corrected_points)):
+            plt.annotate('', 
+                        xy=(corrected_x[i], corrected_new_y[i]),
+                        xytext=(corrected_x[i], corrected_orig_y[i]),
+                        arrowprops=dict(arrowstyle='->', color='red', lw=1.5))
+        
+        plt.xlabel('时间点索引', fontsize=font_size)
+        plt.ylabel('频率索引', fontsize=font_size)
+        plt.title(f'离群点修正 (阈值Z={zscore_threshold}, 修正了{len(corrected_points)}个点)', fontsize=font_size+2)
+        plt.grid(True)
+        plt.legend(fontsize=font_size-2)
+        plt.savefig('outlier_correction.png')
+        plt.close()
+    
+    return cleaned_freq_indices
 
 def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float, sym_t: float, params=None):
     """
@@ -126,8 +230,6 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     params: 可选参数字典，包含以下字段：
         - nsync_sym: 同步符号数量 (默认: 7)
         - ndata_sym: 数据符号数量 (默认: 58)
-        - zscore_threshold: Z分数阈值 (默认: 5)
-        - max_iteration_num: 最大迭代次数 (默认: 400)
         - debug_plots: 是否生成调试图 (默认: False)
         - window_size_factor: 窗口大小因子，window_size = window_size_factor * steps_per_symbol (默认: 4)
         - max_variance_factor: 残差方差阈值的因子 (默认: 0.0001)
@@ -135,6 +237,8 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         - fit_middle_percent: 拟合时使用中间部分的百分比，头尾各去掉(100-fit_middle_percent)/2%
         - poly_degree: 频率漂移拟合的多项式阶数 (默认: 1)
         - precise_sync: 是否进行精确时间同步 
+        - outlier_zscore_threshold: 离群点Z-score阈值 (默认: 5.0)
+        - outlier_max_iter_factor: 离群点最大迭代次数与time_osr的比例因子 (默认: 2.0)
     
     返回:
     tuple: (校正后的信号, 估计的频率漂移率)
@@ -145,8 +249,6 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     default_params = {
         'nsync_sym': 7,
         'ndata_sym': 58,
-        'zscore_threshold': 5,
-        'max_iteration_num': 400,
         'debug_plots': True,
         'window_size_factor': 4,  # 窗口大小因子，用于计算window_size
         'max_variance_factor': 0.0001,  # 方差因子，实际方差阈值将乘以频谱点数的平方
@@ -156,6 +258,8 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         'poly_degree': 2,      # 频率漂移拟合的多项式阶数
         'precise_sync': True,  # 是否进行精确时间同步
         'font_size': FONT_SIZE,  # 添加字体大小参数
+        'outlier_zscore_threshold': 5.0,  # 离群点Z-score阈值
+        'outlier_max_iter_factor': 2.0,   # 离群点最大迭代次数与time_osr的比例因子
     }
     
     if params is None:
@@ -182,8 +286,6 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     debug_plots = params['debug_plots']
     nsync_sym = params['nsync_sym']
     ndata_sym = params['ndata_sym']
-    zscore_threshold = params['zscore_threshold']
-    max_iteration_num = params['max_iteration_num']
     
     # 计算window_size
     window_size = params['window_size_factor'] * steps_per_symbol
@@ -252,19 +354,6 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     freq_step = sym_bin / freq_osr
     max_freqs = max_freq_indices * freq_step
     
-    if debug_plots:
-        plt.figure(figsize=(10, 6))
-        plt.plot(time_axis, max_freqs, 'b-', label='Maximum Frequency')
-        plt.xlabel('Time (s)', fontsize=params['font_size'])
-        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
-        plt.title('Frequency vs Time', fontsize=params['font_size']+2)
-        plt.grid(True)
-        plt.legend(fontsize=params['font_size']-2)
-        plt.savefig('frequency_vs_time.png')
-        # plt.show()
-        plt.close()
-
-    
     # 先检测信号连续性 - 粗时间同步
     signal_segments, continuity_metric = detect_signal_continuity(
         max_freq_indices, 
@@ -279,9 +368,58 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     
     # 选择最长的信号段
     longest_segment = max(signal_segments, key=lambda x: x[1] - x[0])
-    start_idx, end_idx = longest_segment
+    seg_start_idx, seg_end_idx = longest_segment
     
-    # 只为检测到的信号段计算实际频率
+    # 第一次离群点修正 - 在信号段检测后，使用检测到的信号段进行切分
+    outlier_max_iter = int(params['outlier_max_iter_factor'] * time_osr)
+    
+    # 对频谱图和索引进行切分
+    if seg_start_idx < len(max_freq_indices) and seg_end_idx <= len(max_freq_indices):
+        # 切分频率索引序列
+        max_freq_indices_segment = max_freq_indices[seg_start_idx:seg_end_idx]
+        # 切分频谱图
+        sx_filtered_db_segment = sx_filtered_db[:, seg_start_idx:seg_end_idx]
+        
+        # 在切分的数据上进行离群点修正
+        max_freq_indices_segment_cleaned = remove_outliers_iterative(
+            max_freq_indices_segment,
+            sx_filtered_db_segment,
+            zscore_threshold=params['outlier_zscore_threshold'],
+            max_iter=outlier_max_iter,
+            debug_plots=debug_plots,
+            font_size=params['font_size']
+        )
+        
+        # 将清理后的结果替换回原序列
+        max_freq_indices[seg_start_idx:seg_end_idx] = max_freq_indices_segment_cleaned
+    else:
+        # 如果索引超出范围，使用完整序列
+        logger.warning("Signal segment indices out of range, using full sequence for first outlier removal")
+        max_freq_indices = remove_outliers_iterative(
+            max_freq_indices,
+            sx_filtered_db,
+            zscore_threshold=params['outlier_zscore_threshold'],
+            max_iter=outlier_max_iter,
+            debug_plots=debug_plots,
+            font_size=params['font_size']
+        )
+    
+    # 重新计算频率数据
+    max_freqs = max_freq_indices * freq_step
+    
+    if debug_plots:
+        plt.figure(figsize=(10, 6))
+        plt.plot(time_axis, max_freqs, 'b-', label='Maximum Frequency (After First Outlier Removal)')
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+        plt.title('Frequency vs Time (After First Outlier Removal)', fontsize=params['font_size']+2)
+        plt.grid(True)
+        plt.legend(fontsize=params['font_size']-2)
+        plt.savefig('frequency_vs_time_cleaned.png')
+        # plt.show()
+        plt.close()
+
+    # 重新计算实际频率（用于后续处理）
     freq_step = sym_bin / freq_osr
     max_freqs = np.zeros(len(max_freq_indices))
     logger.debug("freq_step: %f", freq_step)
@@ -289,10 +427,6 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 计算整个序列的频率，但只用信号段的频率进行拟合
     for i in range(len(max_freq_indices)):
         max_freqs[i] = max_freq_indices[i] * freq_step
-    
-    # 计算时间轴（秒）
-    time_step = sym_t / time_osr
-    time_axis = np.arange(len(max_freqs)) * time_step
     
     # 绘制最大频率序列和连续性指标
     if debug_plots:
@@ -347,8 +481,8 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         plt.close()
     
     # 提取最长信号段的时间和频率数据用于估计频率漂移
-    seg_time = time_axis[start_idx:end_idx].reshape(-1, 1)
-    seg_freq = max_freqs[start_idx:end_idx]
+    seg_time = time_axis[seg_start_idx:seg_end_idx].reshape(-1, 1)
+    seg_freq = max_freqs[seg_start_idx:seg_end_idx]
     
     # 只使用中间部分的点进行拟合
     fit_middle_percent = params['fit_middle_percent']
@@ -468,6 +602,31 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     # 计算实际频率
     max_freqs_2nd = max_freq_indices_2nd * freq_step
 
+    # 第二次离群点修正 - 根据检测到的信号段切分频谱图
+    time_axis_2nd = np.arange(len(max_freqs_2nd)) * time_step
+    
+    # 对频谱图和索引进行切分（使用相同的信号段）
+    # 切分频率索引序列
+    max_freq_indices_2nd_segment = max_freq_indices_2nd[seg_start_idx:seg_end_idx]
+    # 切分频谱图
+    sx_filtered_db_2nd_segment = sx_filtered_db_2nd[:, seg_start_idx:seg_end_idx]
+    
+    # 在切分的数据上进行离群点修正
+    max_freq_indices_2nd_segment_cleaned = remove_outliers_iterative(
+        max_freq_indices_2nd_segment,
+        sx_filtered_db_2nd_segment,
+        zscore_threshold=params['outlier_zscore_threshold'],
+        max_iter=outlier_max_iter,
+        debug_plots=debug_plots,
+        font_size=params['font_size']
+    )
+    
+    # 将清理后的结果替换回原序列
+    max_freq_indices_2nd[seg_start_idx:seg_end_idx] = max_freq_indices_2nd_segment_cleaned
+    
+    # 重新计算频率数据
+    max_freqs_2nd = max_freq_indices_2nd * freq_step
+
     # 构造同步序列
     sync_seq = (np.array([3, 1, 4, 0, 6, 5, 2]) + 1)
     sync_seq = sync_seq - np.mean(sync_seq)
@@ -499,20 +658,20 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
     max_correlation_value = 0
     # 选择最长的信号段
     longest_segment = max(signal_segments, key=lambda x: x[1] - x[0])
-    start_idx, end_idx = longest_segment
+    seg_start_idx, seg_end_idx = longest_segment
 
     # TODO: 修正end_idx
-    end_idx = end_idx + window_size - 3
+    end_idx = seg_end_idx + window_size - 3
     # 修正start_idx
-    start_idx = start_idx
+    start_idx = seg_start_idx
     
     # 只在检测到的连续信号段内进行相关计算
     # 创建修改后的频率序列，只保留连续段，其余部分置零
     max_freqs_masked = np.zeros_like(max_freqs_2nd)
 
-    max_freqs_masked[start_idx:end_idx] = max_freqs_2nd[start_idx:end_idx]
+    max_freqs_masked[seg_start_idx:seg_end_idx] = max_freqs_2nd[seg_start_idx:seg_end_idx]
 
-    max_freqs_masked[start_idx:end_idx] = max_freqs_masked[start_idx:end_idx] - np.mean(max_freqs_masked[start_idx:end_idx])
+    max_freqs_masked[seg_start_idx:seg_end_idx] = max_freqs_masked[seg_start_idx:seg_end_idx] - np.mean(max_freqs_masked[seg_start_idx:seg_end_idx])
     # 相关计算 - 只在连续信号段上进行
     sync_correlation = np.correlate(max_freqs_masked, three_sync_correlation_seq, mode='full')
 
@@ -576,7 +735,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         plt.axvline(x=correlation_peak_time_block_index * time_step, color='r', linestyle='--', 
                    label=f'Precise Sync Point (t={correlation_peak_time_block_index * time_step:.3f}s)')
         # 标记信号段区域
-        plt.axvspan(start_idx * time_step, end_idx * time_step, 
+        plt.axvspan(seg_start_idx * time_step, seg_end_idx * time_step, 
                   alpha=0.2, color='green', label='Signal Segment')
         plt.title('Precise Synchronization on Frequency Trajectory', fontsize=params['font_size']+2)
         plt.xlabel('Time (s)', fontsize=params['font_size'])
