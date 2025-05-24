@@ -343,6 +343,7 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
         
         plt.tight_layout()
         plt.savefig('signal_continuity_detection.png')
+        plt.show()
         plt.close()
     
     # 提取最长信号段的时间和频率数据用于估计频率漂移
@@ -605,6 +606,59 @@ def correct_frequency_drift(wave_complex: np.ndarray, fs: float, sym_bin: float,
             # 添加到回归数据中
             regression_x = np.append(regression_x, x_values)
             regression_y = np.append(regression_y, y_values)
+    
+    # 绘制max_freqs_masked序列和三个同步序列提取的数据点
+    if debug_plots:
+        plt.figure(figsize=(14, 8))
+        
+        # 计算时间轴
+        time_axis_masked = np.arange(len(max_freqs_masked)) * time_step
+        
+        # 绘制完整的max_freqs_masked序列
+        plt.plot(time_axis_masked, max_freqs_masked, color='darkblue', alpha=0.8, linewidth=1.5, label='Max Freqs Masked Sequence')
+        
+        # 标注三个同步序列位置提取的数据点
+        colors = ['red', 'green', 'orange']
+        for i in range(3):
+            start_idx = i*(nsync_sym+ndata_sym//2)*time_osr + correlation_peak_time_block_index
+            end_idx = start_idx + (nsync_sym-1) * time_osr
+            
+            # 确保索引在有效范围内
+            if start_idx < len(max_freqs_masked):
+                # 计算实际的结束索引
+                actual_end_idx = min(end_idx, len(max_freqs_masked))
+                
+                # 提取时间和频率数据
+                time_indices = np.arange(start_idx, actual_end_idx)
+                time_values = time_indices * time_step
+                freq_values = max_freqs_masked[start_idx:actual_end_idx]
+                
+                # 绘制提取的数据点
+                plt.scatter(time_values, freq_values, color=colors[i], s=20, alpha=0.8, 
+                           label=f'Sync Sequence {i+1} Data Points')
+                
+                # 标注区域范围
+                plt.axvspan(start_idx * time_step, (actual_end_idx-1) * time_step, 
+                           alpha=0.15, color=colors[i])
+                
+                # 添加起始位置的垂直线
+                plt.axvline(x=start_idx * time_step, color=colors[i], linestyle='--', 
+                           alpha=0.6, linewidth=1)
+        
+        # 标注精确同步点
+        plt.axvline(x=correlation_peak_time_block_index * time_step, color='black', 
+                   linestyle='-', linewidth=2, alpha=0.8, label='Precise Sync Point')
+        
+        plt.xlabel('Time (s)', fontsize=params['font_size'])
+        plt.ylabel('Frequency (Hz)', fontsize=params['font_size'])
+        plt.title('Max Freqs Masked Sequence with Sync Data Points', fontsize=params['font_size']+2)
+        plt.grid(True, alpha=0.3)
+        plt.legend(fontsize=params['font_size']-2, loc='best')
+        
+        plt.tight_layout()
+        plt.savefig('sync_data_points_extraction.png', dpi=150, bbox_inches='tight')
+        # plt.show()
+        plt.close()
     
     # 如果数据点不足，使用整个信号段
     if len(regression_x) < 10:
